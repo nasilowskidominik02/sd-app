@@ -1,2 +1,0 @@
-# sd-app
-sd-app
