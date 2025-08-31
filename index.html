@@ -17,20 +17,14 @@
         </header>
 
         <main class="login-main">
-            <form id="loginForm">
-                <div class="input-group">
-                    <label for="login">Login</label>
-                    <input type="text" id="login" name="login" required>
-                </div>
-                <div class="input-group">
-                    <label for="password">Hasło</label>
-                    <input type="password" id="password" name="password" required>
-                </div>
-                <button type="submit" class="btn-login">Zaloguj</button>
-            </form>
-            <div class="password-reminder">
-                <button id="forgotPasswordBtn">Nie pamiętasz hasła?</button>
-                <p id="phoneNumber" class="hidden">Skontaktuj się z administratorem: 123 456 789</p>
+            <div id="loginSection">
+                <p class="login-prompt">Zostaniesz przekierowany na stronę logowania Microsoft. Użyj swojego adresu e-mail i hasła, które zostały dla Ciebie utworzone w systemie.</p>
+                <a href="/.auth/login/aad" class="btn-login">Przejdź do logowania</a>
+            </div>
+
+            <div id="userInfoSection" class="hidden">
+                <p class="welcome-message">Witaj, <span id="userName"></span>!</p>
+                <a href="/.auth/logout" class="btn-logout">Wyloguj</a>
             </div>
         </main>
     </div>
@@ -40,19 +34,28 @@
     </footer>
 
     <script>
-        // Skrypt do obsługi kliknięcia przycisku "Nie pamiętasz hasła?"
-        document.getElementById('forgotPasswordBtn').addEventListener('click', function() {
-            const phoneElement = document.getElementById('phoneNumber');
-            phoneElement.classList.toggle('hidden');
-        });
+        async function checkAuthState() {
+            try {
+                const response = await fetch('/.auth/me');
+                const data = await response.json();
+                
+                if (data.clientPrincipal) {
+                    const loginSection = document.getElementById('loginSection');
+                    const userInfoSection = document.getElementById('userInfoSection');
+                    const userNameSpan = document.getElementById('userName');
 
-        // Zapobieganie domyślnemu przeładowaniu strony po wysłaniu formularza
-        document.getElementById('loginForm').addEventListener('submit', function(event) {
-            event.preventDefault();
-            // Logika logowania - do wdrożenia
-            alert('Logika logowania nie została jeszcze zaimplementowana.');
-        });
+                    userNameSpan.textContent = data.clientPrincipal.userDetails;
+                    
+                    loginSection.classList.add('hidden');
+                    userInfoSection.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Błąd podczas sprawdzania stanu uwierzytelnienia:', error);
+            }
+        }
+        checkAuthState();
     </script>
 
 </body>
 </html>
+
