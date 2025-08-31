@@ -3,14 +3,56 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk App</title>
-    <h1> Chyba znów strzeliłeś gola mordzia, ja strzeliłem siedem...</h1>
-    <style>
-        body { font-family: sans-serif; display: grid; place-content: center; height: 100vh; margin: 0; background-color: #f0f2f5; }
-        h1 { color: #1c1e21; }
-    </style>
+    <title>Logowanie - Service Desk App</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
-    <h1>Test działania</h1>
+
+    <div class="login-container">
+        <header class="login-header">
+            <h1>Service Desk App</h1>
+        </header>
+
+        <main class="login-main">
+            <form id="loginForm">
+                <div class="input-group">
+                    <label for="login">Login</label>
+                    <input type="text" id="login" name="login" required>
+                </div>
+                <div class="input-group">
+                    <label for="password">Hasło</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <button type="submit" class="btn-login">Zaloguj</button>
+            </form>
+            <div class="password-reminder">
+                <button id="forgotPasswordBtn">Nie pamiętasz hasła?</button>
+                <p id="phoneNumber" class="hidden">Skontaktuj się z administratorem: 123 456 789</p>
+            </div>
+        </main>
+    </div>
+
+    <footer class="site-footer">
+        <p>&copy; Dominik Nasiłowski 2026</p>
+    </footer>
+
+    <script>
+        // Skrypt do obsługi kliknięcia przycisku "Nie pamiętasz hasła?"
+        document.getElementById('forgotPasswordBtn').addEventListener('click', function() {
+            const phoneElement = document.getElementById('phoneNumber');
+            phoneElement.classList.toggle('hidden');
+        });
+
+        // Zapobieganie domyślnemu przeładowaniu strony po wysłaniu formularza
+        document.getElementById('loginForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            // Logika logowania - do wdrożenia
+            alert('Logika logowania nie została jeszcze zaimplementowana.');
+        });
+    </script>
+
 </body>
 </html>
