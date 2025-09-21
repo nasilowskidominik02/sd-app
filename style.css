@@ -31,7 +31,7 @@ body {
 
 .login-container {
     width: 100%;
-    max-width: 400px;
+    max-width: 600px;
     background-color: var(--white);
     border-radius: var(--border-radius);
     box-shadow: var(--shadow);

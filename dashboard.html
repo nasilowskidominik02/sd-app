@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Główny - Service Desk App</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <div class="app-container">
+        <!-- Pasek boczny z nawigacją -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>Service Desk</h2>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active">Panel Główny</a>
+                <a href="#" class="nav-item">Nowe zgłoszenie</a>
+                <a href="#" class="nav-item">Moje zgłoszenia</a>
+                <!-- Link do panelu admina, początkowo ukryty -->
+                <a href="#" id="admin-link" class="nav-item hidden">Panel Admina</a>
+            </nav>
+        </aside>
+
+        <!-- Główna zawartość strony -->
+        <div class="main-content">
+            <header class="main-header">
+                <h1>Panel Główny</h1>
+                <div class="user-info">
+                    <span id="userName">Ładowanie...</span>
+                    <a href="/.auth/logout" class="btn-logout-small">Wyloguj</a>
+                </div>
+            </header>
+
+            <main>
+                <!-- Lista zgłoszeń -->
+                <div class="ticket-list">
+                    <h2>Twoje ostatnie zgłoszenia</h2>
+                    
+                    <div class="ticket-card">
+                        <div class="ticket-status status-open">Nowe</div>
+                        <div class="ticket-details">
+                            <!-- Wyświetlanie otwartych zgłoszeń -->
+                        </div>
+                        <a href="#" class="btn-details">Zobacz szczegóły</a>
+                    </div>
+                    
+                    <div class="ticket-card">
+                        <div class="ticket-status status-closed">Zamknięte</div>
+                        <div class="ticket-details">
+                            <!-- Wyświetlanie zamkniętych zgłoszeń -->
+                        </div>
+                         <a href="#" class="btn-details">Zobacz szczegóły</a>
+                    </div>
+
+                </div>
+            </main>
+        </div>
+    </div>
+    
+    <script>
+        async function initializeDashboard() {
+            try {
+                const response = await fetch('/.auth/me');
+                const data = await response.json();
+                
+                if (!data.clientPrincipal) {
+                    // Jeśli użytkownik nie jest zalogowany, odeślij go na stronę logowania
+                    window.location.href = '/index.html';
+                    return;
+                }
+
+                // Ustaw nazwę użytkownika w nagłówku
+                document.getElementById('userName').textContent = data.clientPrincipal.userDetails;
+
+                // Sprawdź, czy użytkownik ma rolę 'sd-admins'
+                // W Azure SWA, role niestandardowe są w tablicy `userRoles`
+                const isAdmin = data.clientPrincipal.userRoles.includes('sd-admins');
+                
+                if (isAdmin) {
+                    // Pokaż link do panelu admina
+                    document.getElementById('admin-link').classList.remove('hidden');
+                }
+
+            } catch (error) {
+                console.error('Błąd inicjalizacji panelu, nie posiadasz uprawnień', error);
+                // W przypadku błędu również przekieruj na stronę logowania
+                window.location.href = '/index.html';
+            }
+        }
+
+        initializeDashboard();
+    </script>
+
+</body>
+</html>
