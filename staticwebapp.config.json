@@ -1,13 +1,17 @@
 {
   "routes": [
     {
-      "route": "/*",
+      "route": "/dashboard.html",
       "allowedRoles": ["user", "sd"]
     }
   ],
   "responseOverrides": {
     "401": {
       "redirect": "/index.html",
+      "statusCode": 302
+    },
+    "403": {
+      "redirect": "/unauthorized.html",
       "statusCode": 302
     }
   }
