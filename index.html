@@ -3,59 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk App</title>
+    <title>Zaloguj się - Service Desk App</title>
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
-
-    <div class="login-container">
-        <header class="login-header">
+    <div class="container">
+        <header>
             <h1>Service Desk App</h1>
         </header>
-
-        <main class="login-main">
-            <div id="loginSection">
-                <p class="login-prompt">Zostaniesz przekierowany na stronę logowania Microsoft. Użyj swojego adresu e-mail i hasła, które zostały dla Ciebie utworzone w systemie.</p> <br>
-                <a href="/.auth/login/aad" class="btn-login">Przejdź do logowania</a>
-            </div>
-
-            <div id="userInfoSection" class="hidden">
-                <p class="welcome-message">Witaj, <span id="userName"></span>!</p>
-                <a href="/.auth/logout" class="btn-logout">Wyloguj</a>
+        <main>
+            <div class="panel" id="login-panel">
+                <h2>Zaloguj się</h2>
+                <p class="login-instruction">
+                    Zostaniesz przekierowany na stronę logowania Microsoft. <br>
+                    Użyj danych (e-mail i hasło), które otrzymałeś od administratora.
+                </p>
+                <a href="/.auth/login/aad" class="button">Przejdź do logowania</a>
             </div>
         </main>
+        <footer>
+            <p>Dominik Nasiłowski 2026 (R)</p>
+        </footer>
     </div>
 
-    <footer class="site-footer">
-        <p>&copy; Dominik Nasiłowski 2026</p>
-    </footer>
-
     <script>
-        async function checkAuthState() {
+        (async function() {
             try {
+                // Sprawdzamy status uwierzytelnienia użytkownika
                 const response = await fetch('/.auth/me');
                 const data = await response.json();
                 
                 if (data.clientPrincipal) {
-                    const loginSection = document.getElementById('loginSection');
-                    const userInfoSection = document.getElementById('userInfoSection');
-                    const userNameSpan = document.getElementById('userName');
-
-                    userNameSpan.textContent = data.clientPrincipal.userDetails;
-                    
-                    loginSection.classList.add('hidden');
-                    userInfoSection.classList.remove('hidden');
+                    // Użytkownik jest zalogowany, więc automatycznie przekierowujemy go do dashboardu.
+                    window.location.href = '/dashboard.html';
                 }
-            } catch (error) {
-                console.error('Błąd podczas sprawdzania stanu uwierzytelnienia:', error);
-            }
-        }
-        checkAuthState();
-    </script>
+                // Jeśli nie jest zalogowany (clientPrincipal jest null), nic nie robimy,
+                // użytkownik po prostu widzi normalny przycisk logowania.
 
+            } catch (error) {
+                console.error('Błąd podczas sprawdzania statusu logowania:', error);
+            }
+        })();
+    </script>
 </body>
 </html>
 
