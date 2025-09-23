@@ -21,7 +21,7 @@
 
 body {
     font-family: 'Inter', sans-serif;
-    background-color: var(--light-gray-bg);
+    background-color: #abb1b8;
     color: var(--text-dark);
     display: flex;
     flex-direction: column;
@@ -43,7 +43,7 @@ body {
 .container {
     width: 100%;
     max-width: 600px;
-    background-color: var(--white);
+    background-color: #8e959c;
     border-radius: var(--border-radius);
     box-shadow: var(--shadow);
     padding: 32px;
@@ -72,7 +72,8 @@ body {
     font-weight: 500;
     cursor: pointer;
     transition: background-color 0.2s;
-    margin-top: 8px; /* Mały odstęp od góry */
+    margin-top: 8px; 
+    text-decoration: none;
 }
 
 .button-login:hover {
@@ -90,7 +91,7 @@ body {
 .dashboard-container
 {
     font-family: 'Inter', sans-serif;
-    background-color: var(--light-gray-bg);
+    background-color: #8d9297;
     color: var(--text-dark);
     display: flex;
     flex-direction: column;
