@@ -1,3 +1,5 @@
+/* Elementy globalne --------------------------------------------------------------- */
+
 :root {
     --primary-blue: #3b82f6;
     --primary-blue-hover: #2563eb;
@@ -29,6 +31,15 @@ body {
     padding: 20px;
 }
 
+.footer {
+    position: absolute;
+    bottom: 20px;
+    color: var(--text-light);
+    font-size: 14px;
+}
+
+/* Elementy index.html  --------------------------------------------------------------- */
+
 .container {
     width: 100%;
     max-width: 600px;
@@ -39,48 +50,19 @@ body {
     text-align: center;
 }
 
-
-
-.login-header h1 {
+.login-panel h2 {
     font-size: 24px;
     font-weight: 600;
     margin-bottom: 24px;
 }
 
-#loginForm {
-    display: flex;
-    flex-direction: column;
-    gap: 16px; 
-}
-
-.input-group {
-    text-align: left;
-}
-
-.input-group label {
-    display: block;
-    font-size: 14px;
-    font-weight: 500;
-    margin-bottom: 6px;
+.login-instruction
+{
     color: var(--text-light);
+    font-size: 14px;
 }
 
-.input-group input {
-    width: 100%;
-    padding: 10px 12px;
-    border: 1px solid var(--gray-border);
-    border-radius: var(--border-radius);
-    font-size: 16px;
-    transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.input-group input:focus {
-    outline: none;
-    border-color: var(--primary-blue);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
-}
-
-.btn-login {
+.button-login {
     background-color: var(--primary-blue);
     color: var(--white);
     border: none;
@@ -93,48 +75,17 @@ body {
     margin-top: 8px; /* Mały odstęp od góry */
 }
 
-.btn-login:hover {
+.button-login:hover {
     background-color: var(--primary-blue-hover);
-}
-
-.password-reminder {
-    margin-top: 20px;
-    font-size: 14px;
-}
-
-#forgotPasswordBtn {
-    background: none;
-    border: none;
-    color: var(--primary-blue);
-    cursor: pointer;
-    text-decoration: none;
-    font-size: inherit;
-}
-
-#forgotPasswordBtn:hover {
-    text-decoration: underline;
-}
-
-#phoneNumber {
-    margin-top: 12px;
-    color: var(--text-dark);
-    font-weight: 500;
 }
 
 .hidden {
     display: none;
 }
 
-.site-footer {
-    position: absolute;
-    bottom: 20px;
-    color: var(--text-light);
-    font-size: 14px;
-}
 
 
-
-/* Elementy dashboardu */
+/* Elementy dashboardu  --------------------------------------------------------------- */
 
 .dashboard-container
 {
