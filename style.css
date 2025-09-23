@@ -118,6 +118,11 @@ a
     width: 20%;
 }
 
+#admin-link
+{
+    display: hidden;
+}
+
 .main-dashboard-header
 {
     
