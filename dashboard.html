@@ -13,22 +13,20 @@
 
     <div class="dashboard-container">
         <!-- Pasek boczny z nawigacją -->
-        <aside class="sidebar">
-            <div class="sidebar-header">
-                <h2>Service Desk</h2>
-            </div>
-            <nav class="sidebar-nav">
-                <a href="#" class="nav-item active">Panel Główny</a>
-                <a href="#" class="nav-item">Nowe zgłoszenie</a>
-                <a href="#" class="nav-item">Moje zgłoszenia</a>
-                <!-- Link do panelu admina, początkowo ukryty -->
-                <a href="#" id="admin-link" class="nav-item hidden">Panel Admina</a>
-            </nav>
-        </aside>
-
+        <div class="top-dashboard-header">
+            <h2>Aplikacja do do zgłaszania problemów do Service Desk</h2>
+        </div>
+         <nav class="sidebar-dashboard-nav">
+             <a href="#" class="nav-item"><b>Panel Główny</b></a>
+             <a href="#" class="nav-item">Nowe zgłoszenie</a>
+             <a href="#" class="nav-item">Moje zgłoszenia</a>
+             <!-- Link do panelu administracyjnego, ukryty dla user -->
+             <a href="#" id="admin-link">Panel Administracyjny</a>
+        </nav>
+        
         <!-- Główna zawartość strony -->
         <div class="main-content">
-            <header class="main-header">
+            <header class="main-dashboard-header">
                 <h1>Panel Główny</h1>
                 <div class="user-info">
                     <span id="userName">Ładowanie...</span>
@@ -60,6 +58,9 @@
                 </div>
             </main>
         </div>
+        <footer class="footer">
+            <p>Dominik Nasiłowski 2026 (R)</p>
+        </footer>
     </div>
     
     <script>
