@@ -31,6 +31,11 @@ body {
     padding: 20px;
 }
 
+a
+{
+    text-decoration: none;
+}
+
 .footer {
     position: absolute;
     bottom: 20px;
@@ -42,7 +47,7 @@ body {
 
 .container {
     width: 100%;
-    max-width: 600px;
+    max-width: 800px;
     background-color: #8e959c;
     border-radius: var(--border-radius);
     box-shadow: var(--shadow);
@@ -53,13 +58,11 @@ body {
 .login-panel h2 {
     font-size: 24px;
     font-weight: 600;
-    margin-bottom: 24px;
 }
 
 .login-instruction
 {
-    color: var(--text-light);
-    font-size: 14px;
+    font-size: 18px;
 }
 
 .button-login {
@@ -71,8 +74,7 @@ body {
     font-size: 16px;
     font-weight: 500;
     cursor: pointer;
-    transition: background-color 0.2s;
-    margin-top: 8px; 
+    transition: background-color 0.2s; 
     text-decoration: none;
 }
 
