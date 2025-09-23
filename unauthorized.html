@@ -15,13 +15,14 @@
             <h1>Service Desk App</h1>
         </header>
         <main>
-            <div class="panel-unauthorized-panel">
+            <div class="panel">
                 <h2>Brak dostępu (Błąd 403)</h2>
                 <p>
-                    Pomyślnie się zalogowałeś, ale Twoje konto nie posiada uprawnień wymaganych do korzystania z tej aplikacji.
+                    Pomyślnie zalogowano na konto <strong id="unauthorized-email">...</strong>, 
+                    ale nie posiada ono uprawnień do korzystania z tej aplikacji.
                 </p>
                 <p>
-                    Skontaktuj się z administratorem w celu nadania odpowiednich ról.
+                    Skontaktuj się z administratorem, aby nadał Ci odpowiednie role.
                 </p>
                 <a href="/.auth/logout" class="button logout-button">Wyloguj i spróbuj ponownie</a>
             </div>
@@ -30,5 +31,23 @@
             <p>Dominik Nasiłowski 2026 (R)</p>
         </footer>
     </div>
+
+    <script>
+        (async function() {
+            try {
+                // Pobieramy dane zalogowanego użytkownika
+                const response = await fetch('/.auth/me');
+                const data = await response.json();
+                
+                if (data.clientPrincipal) {
+                    // Jeśli dane są dostępne, wyświetlamy adres e-mail (lub nazwę) użytkownika
+                    document.getElementById('unauthorized-email').textContent = data.clientPrincipal.userDetails;
+                }
+            } catch (error) {
+                console.error('Błąd podczas pobierania danych użytkownika:', error);
+            }
+        })();
+    </script>
 </body>
 </html>
+
