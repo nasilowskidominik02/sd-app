@@ -29,7 +29,7 @@ body {
     padding: 20px;
 }
 
-.login-container .panel-unauthorized-panel {
+.container {
     width: 100%;
     max-width: 600px;
     background-color: var(--white);
@@ -38,6 +38,8 @@ body {
     padding: 32px;
     text-align: center;
 }
+
+
 
 .login-header h1 {
     font-size: 24px;
@@ -131,3 +133,18 @@ body {
 }
 
 
+
+/* Elementy dashboardu */
+
+.dashboard-container
+{
+    font-family: 'Inter', sans-serif;
+    background-color: var(--light-gray-bg);
+    color: var(--text-dark);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+}
