@@ -1,0 +1,15 @@
+{
+  "routes": [
+    {
+      "route": "/*",
+      "allowedRoles": ["user", "sd"]
+    }
+  ],
+  "responseOverrides": {
+    "401": {
+      "redirect": "/index.html",
+      "statusCode": 302
+    }
+  }
+}
+
