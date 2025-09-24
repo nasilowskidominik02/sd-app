@@ -78,12 +78,18 @@
                 // Generujemy HTML dla każdego zgłoszenia
                 tickets.forEach(ticket => {
                     const statusClass = ticket.status === 'Nowe' ? 'status-open' : 'status-closed';
+                    // Formatowanie daty dla lepszej czytelności
+                    const creationDate = new Date(ticket.dates.createdAt).toLocaleString('pl-PL');
+                    
                     const ticketCard = `
                         <div class="ticket-card">
                             <div class="ticket-status ${statusClass}">${ticket.status}</div>
                             <div class="ticket-details">
                                 <h3>${ticket.title}</h3>
-                                <p>Kategoria: ${ticket.category}</p>
+                                <div class="ticket-meta">
+                                    <span>Zgłaszający: <strong>${ticket.reportingUser.name}</strong></span>
+                                    <span>Utworzono: ${creationDate}</span>
+                                </div>
                             </div>
                             <a href="#" class="btn-details">Zobacz szczegóły</a>
                         </div>
