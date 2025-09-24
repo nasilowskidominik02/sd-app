@@ -39,62 +39,87 @@
             <!-- Główna zawartość strony -->
             <main class="main-content">
                 <h1>Panel Główny</h1>
-                <!-- Lista zgłoszeń -->
+                <!-- Kontener na listę zgłoszeń - teraz dynamiczny -->
                 <div class="ticket-list">
                     <h2>Twoje ostatnie zgłoszenia</h2>
-                    
-                    <div class="ticket-card">
-                        <div class="ticket-status status-open">Nowe</div>
-                        <div class="ticket-details">
-                            <h3>Problem z drukarką</h3>
-                            <p>Drukarka w dziale B nie drukuje...</p>
-                        </div>
-                        <a href="#" class="btn-details">Zobacz szczegóły</a>
-                    </div>
-                    
-                    <div class="ticket-card">
-                        <div class="ticket-status status-closed">Zamknięte</div>
-                        <div class="ticket-details">
-                            <h3>Brak dostępu do folderu</h3>
-                            <p>Nie mogę otworzyć folderu Z:/Projekty...</p>
-                        </div>
-                         <a href="#" class="btn-details">Zobacz szczegóły</a>
+                    <!-- Zgłoszenia zostaną wstawione tutaj przez JavaScript -->
+                    <div id="tickets-container">
+                        <p>Ładowanie zgłoszeń...</p>
                     </div>
                 </div>
             </main>
         </div>
+
+        <!-- Stopka Aplikacji -->
         <footer class="app-footer">
             <p>Dominik Nasiłowski 2026 (R)</p>
         </footer>
     </div>
     
     <script>
+        // Funkcja do pobierania i wyświetlania zgłoszeń
+        async function loadTickets() {
+            const container = document.getElementById('tickets-container');
+            try {
+                const response = await fetch('/api/getTickets');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const tickets = await response.json();
+
+                // Czyścimy kontener z komunikatu "Ładowanie..."
+                container.innerHTML = '';
+
+                if (tickets.length === 0) {
+                    container.innerHTML = '<p>Nie znaleziono żadnych zgłoszeń.</p>';
+                    return;
+                }
+
+                // Generujemy HTML dla każdego zgłoszenia
+                tickets.forEach(ticket => {
+                    const statusClass = ticket.status === 'Nowe' ? 'status-open' : 'status-closed';
+                    const ticketCard = `
+                        <div class="ticket-card">
+                            <div class="ticket-status ${statusClass}">${ticket.status}</div>
+                            <div class="ticket-details">
+                                <h3>${ticket.title}</h3>
+                                <p>Kategoria: ${ticket.category}</p>
+                            </div>
+                            <a href="#" class="btn-details">Zobacz szczegóły</a>
+                        </div>
+                    `;
+                    container.innerHTML += ticketCard;
+                });
+
+            } catch (error) {
+                console.error('Błąd podczas pobierania zgłoszeń:', error);
+                container.innerHTML = '<p>Wystąpił błąd podczas ładowania zgłoszeń. Spróbuj ponownie później.</p>';
+            }
+        }
+
         async function initializeDashboard() {
             try {
-                // Ta ścieżka /.auth/me jest specjalnym adresem, który działa tylko
-                // po wdrożeniu na Azure lub przy użyciu lokalnego emulatora SWA CLI.
                 const response = await fetch('/.auth/me');
                 const data = await response.json();
                 
                 if (!data.clientPrincipal) {
-                    // Jeśli użytkownik nie jest zalogowany, odeślij go na stronę logowania
-                    window.location.href = 'index.html'; // POPRAWKA: Zmiana na ścieżkę względną
+                    window.location.href = 'index.html';
                     return;
                 }
 
                 document.getElementById('userName').textContent = data.clientPrincipal.userDetails;
 
-                // Sprawdź, czy użytkownik ma rolę 'sd'
                 const isServiceDesk = data.clientPrincipal.userRoles.includes('sd');
-                
                 if (isServiceDesk) {
                     document.getElementById('admin-link').classList.remove('hidden');
                 }
 
+                // Po pomyślnej weryfikacji użytkownika, ładujemy zgłoszenia
+                loadTickets();
+
             } catch (error) {
                 console.error('Błąd inicjalizacji panelu:', error);
-                // W przypadku błędu również przekieruj na stronę logowania
-                window.location.href = 'index.html'; // POPRAWKA: Zmiana na ścieżkę względną
+                window.location.href = 'index.html';
             }
         }
 
