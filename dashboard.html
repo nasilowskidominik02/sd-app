@@ -12,9 +12,16 @@
 <body>
 
     <div class="dashboard-container">
+        <!-- Pasek z nazwą strony, loginem użytkownika i przyciskiem Logoutu -->
+        <header class="main-dashboard-header">
+            <h2>Aplikacja do do zgłaszania problemów do Service Desk - Panel Główny</h2>
+            <span id="userName">Ładowanie...</span>
+            <a href="/.auth/logout" class="btn-logout-small"><i>Wyloguj</i></a>
+        </header>
+
         <!-- Pasek boczny z nawigacją -->
         <div class="top-dashboard-header">
-            <h2>Aplikacja do do zgłaszania problemów do Service Desk</h2>
+            
         </div>
          <nav class="sidebar-dashboard-nav">
             <ul>
@@ -28,17 +35,6 @@
         
         <!-- Główna zawartość strony -->
         <div class="main-content">
-            <header class="main-dashboard-header">
-                <h1>
-                    Panel Główny 
-                    <span id="userName">Ładowanie...</span> 
-                    <a href="/.auth/logout" class="btn-logout-small">Wyloguj</a>
-                </h1>
-                    
-                    
-                
-            </header>
-
             <main>
                 <!-- Lista zgłoszeń -->
                 <div class="ticket-list">
