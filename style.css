@@ -98,10 +98,7 @@ a
     color: var(--text-dark);
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-    padding: 20px;
+    height: 100%;
 }
 
 .top-dashboard-header
