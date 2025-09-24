@@ -11,28 +11,34 @@
 </head>
 <body>
 
-    <div class="dashboard-container">
-        <!-- Pasek z nazwą strony, loginem użytkownika i przyciskiem Logoutu -->
-        <header class="main-dashboard-header">
-            <h2>Aplikacja do do zgłaszania problemów do Service Desk - Panel Główny</h2>
-            <span id="userName">Ładowanie...</span>
-            <a href="/.auth/logout" class="btn-logout-small"><i>Wyloguj</i></a>
+    <div class="app-layout">
+        <!-- Górny baner na całą szerokość -->
+        <header class="app-header">
+            <div class="header-title">
+                Aplikacja do zgłaszania problemów do Service Desk
+            </div>
+            <div class="header-user-info">
+                <span id="userName">Ładowanie...</span>
+                <a href="/.auth/logout" class="btn-logout">Wyloguj</a>
+            </div>
         </header>
 
-        <!-- Pasek boczny z nawigacją -->
-         <nav class="sidebar-dashboard-nav">
-            <ul>
-             <a href="https://www.sd-app.pl/dashboard.html#" class="nav-item"><b>Panel Główny</b></a> <br>
-             <a href="#" class="nav-item">Nowe zgłoszenie</a> <br>
-             <a href="#" class="nav-item">Moje zgłoszenia</a> <br>
-             <!-- Link do panelu administracyjnego, ukryty dla user, widoczny dla sd -->
-             <a href="#" id="admin-link">Panel Administracyjny</a> 
-             </ul>
-        </nav>
-        
-        <!-- Główna zawartość strony -->
-        <div class="main-content">
-            <main>
+        <!-- Główna część aplikacji (pasek boczny + treść) -->
+        <div class="app-body">
+            <!-- Pasek boczny z nawigacją -->
+            <aside class="sidebar">
+                <nav class="sidebar-nav">
+                    <a href="#" class="nav-item active">Panel Główny</a>
+                    <a href="#" class="nav-item">Nowe zgłoszenie</a>
+                    <a href="#" class="nav-item">Moje zgłoszenia</a>
+                    <!-- Link do panelu administracyjnego, ukryty dla user, widoczny dla sd -->
+                    <a href="#" id="admin-link" class="nav-item hidden">Panel Administracyjny</a> 
+                </nav>
+            </aside>
+            
+            <!-- Główna zawartość strony -->
+            <main class="main-content">
+                <h1>Panel Główny</h1>
                 <!-- Lista zgłoszeń -->
                 <div class="ticket-list">
                     <h2>Twoje ostatnie zgłoszenia</h2>
@@ -40,7 +46,8 @@
                     <div class="ticket-card">
                         <div class="ticket-status status-open">Nowe</div>
                         <div class="ticket-details">
-                            <!-- Wyświetlanie otwartych zgłoszeń -->
+                            <h3>Problem z drukarką</h3>
+                            <p>Drukarka w dziale B nie drukuje...</p>
                         </div>
                         <a href="#" class="btn-details">Zobacz szczegóły</a>
                     </div>
@@ -48,52 +55,48 @@
                     <div class="ticket-card">
                         <div class="ticket-status status-closed">Zamknięte</div>
                         <div class="ticket-details">
-                            <!-- Wyświetlanie zamkniętych zgłoszeń -->
+                            <h3>Brak dostępu do folderu</h3>
+                            <p>Nie mogę otworzyć folderu Z:/Projekty...</p>
                         </div>
                          <a href="#" class="btn-details">Zobacz szczegóły</a>
                     </div>
-
                 </div>
             </main>
         </div>
-        <footer class="footer">
-            <p>Dominik Nasiłowski 2026 (R)</p>
-        </footer>
     </div>
     
     <script>
         async function initializeDashboard() {
             try {
+                // Ta ścieżka /.auth/me jest specjalnym adresem, który działa tylko
+                // po wdrożeniu na Azure lub przy użyciu lokalnego emulatora SWA CLI.
                 const response = await fetch('/.auth/me');
                 const data = await response.json();
                 
                 if (!data.clientPrincipal) {
                     // Jeśli użytkownik nie jest zalogowany, odeślij go na stronę logowania
-                    window.location.href = '/index.html';
+                    window.location.href = 'index.html'; // POPRAWKA: Zmiana na ścieżkę względną
                     return;
                 }
 
-                // Ustaw nazwę użytkownika w nagłówku
                 document.getElementById('userName').textContent = data.clientPrincipal.userDetails;
 
-                // Sprawdź, czy użytkownik ma rolę 'sd-admins'
-                // W Azure SWA, role niestandardowe są w tablicy `userRoles`
-                const isAdmin = data.clientPrincipal.userRoles.includes('sd-admins');
+                // Sprawdź, czy użytkownik ma rolę 'sd'
+                const isServiceDesk = data.clientPrincipal.userRoles.includes('sd');
                 
-                if (isAdmin) {
-                    // Pokaż link do panelu admina
+                if (isServiceDesk) {
                     document.getElementById('admin-link').classList.remove('hidden');
                 }
 
             } catch (error) {
-                console.error('Błąd inicjalizacji panelu, nie posiadasz uprawnień', error);
+                console.error('Błąd inicjalizacji panelu:', error);
                 // W przypadku błędu również przekieruj na stronę logowania
-                window.location.href = '/index.html';
+                window.location.href = 'index.html'; // POPRAWKA: Zmiana na ścieżkę względną
             }
         }
 
         initializeDashboard();
     </script>
-
 </body>
 </html>
+
