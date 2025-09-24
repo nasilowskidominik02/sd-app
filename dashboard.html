@@ -41,7 +41,7 @@
                 <h1>Panel Główny</h1>
                 <!-- Kontener na listę zgłoszeń - teraz dynamiczny -->
                 <div class="ticket-list">
-                    <h2>Twoje ostatnie zgłoszenia</h2>
+                    <h2 id="ticket-list-title">Twoje ostatnie zgłoszenia</h2>
                     <!-- Zgłoszenia zostaną wstawione tutaj przez JavaScript -->
                     <div id="tickets-container">
                         <p>Ładowanie zgłoszeń...</p>
@@ -118,6 +118,8 @@
                 const isServiceDesk = data.clientPrincipal.userRoles.includes('sd');
                 if (isServiceDesk) {
                     document.getElementById('admin-link').classList.remove('hidden');
+                    // Zmiana tytułu listy dla użytkownika SD
+                    document.getElementById('ticket-list-title').textContent = 'Wszystkie ostatnie zgłoszenia';
                 }
 
                 // Po pomyślnej weryfikacji użytkownika, ładujemy zgłoszenia
