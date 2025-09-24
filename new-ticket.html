@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nowe Zgłoszenie - Service Desk App</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <div class="app-layout">
+        <!-- Górny baner na całą szerokość -->
+        <header class="app-header">
+            <div class="header-title">
+                Aplikacja do zgłaszania problemów do Service Desk
+            </div>
+            <div class="header-user-info">
+                <span id="userName">Ładowanie...</span>
+                <a href="/.auth/logout" class="btn-logout">Wyloguj</a>
+            </div>
+        </header>
+
+        <!-- Główna część aplikacji (pasek boczny + treść) -->
+        <div class="app-body">
+            <!-- Pasek boczny z nawigacją -->
+            <aside class="sidebar">
+                <nav class="sidebar-nav">
+                    <a href="dashboard.html" class="nav-item">Panel Główny</a>
+                    <a href="new-ticket.html" class="nav-item active">Nowe zgłoszenie</a>
+                    <a href="#" class="nav-item">Moje zgłoszenia</a>
+                    <a href="#" id="admin-link" class="nav-item hidden">Panel Administracyjny</a> 
+                </nav>
+            </aside>
+            
+            <!-- Główna zawartość strony -->
+            <main class="main-content">
+                <h1>Utwórz nowe zgłoszenie</h1>
+                
+                <form id="new-ticket-form" class="form-container">
+                    <div class="form-group">
+                        <label for="title">Tytuł zgłoszenia</label>
+                        <input type="text" id="title" name="title" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="content">Treść zgłoszenia</label>
+                        <textarea id="content" name="content" rows="10" required></textarea>
+                    </div>
+                     <div class="form-group">
+                        <label for="attachment">Załącznik (opcjonalnie)</label>
+                        <input type="file" id="attachment" name="attachment" class="file-input">
+                    </div>
+                    
+                    <div class="form-actions">
+                         <button type="submit" class="btn btn-primary">Wyślij zgłoszenie</button>
+                         <p id="form-status" class="hidden"></p>
+                    </div>
+                </form>
+
+            </main>
+        </div>
+
+        <!-- Stopka Aplikacji -->
+        <footer class="app-footer">
+            <p>Dominik Nasiłowski 2026 (R)</p>
+        </footer>
+    </div>
+    
+    <script>
+        async function initializePage() {
+            try {
+                const response = await fetch('/.auth/me');
+                const data = await response.json();
+                
+                if (!data.clientPrincipal) {
+                    window.location.href = 'index.html';
+                    return;
+                }
+
+                document.getElementById('userName').textContent = data.clientPrincipal.userDetails;
+
+                const isServiceDesk = data.clientPrincipal.userRoles.includes('sd');
+                if (isServiceDesk) {
+                    document.getElementById('admin-link').classList.remove('hidden');
+                }
+
+            } catch (error) {
+                console.error('Błąd inicjalizacji strony:', error);
+                window.location.href = 'index.html';
+            }
+        }
+
+        async function handleFormSubmit(event) {
+            event.preventDefault();
+            const form = event.target;
+            const submitButton = form.querySelector('button[type="submit"]');
+            const statusMessage = document.getElementById('form-status');
+
+            submitButton.disabled = true;
+            statusMessage.classList.remove('hidden', 'success', 'error');
+
+            let attachmentInfo = null;
+            const fileInput = form.elements.attachment;
+
+            // Krok 1: Prześlij plik, jeśli został wybrany
+            if (fileInput.files.length > 0) {
+                statusMessage.textContent = 'Przesyłanie załącznika...';
+                statusMessage.classList.remove('hidden');
+                const file = fileInput.files[0];
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                    const uploadResponse = await fetch('/api/uploadAttachment', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!uploadResponse.ok) {
+                        throw new Error('Błąd podczas przesyłania pliku. Spróbuj ponownie.');
+                    }
+                    attachmentInfo = await uploadResponse.json(); // Oczekujemy { fileName, url }
+                } catch (error) {
+                    statusMessage.textContent = `Błąd: ${error.message}`;
+                    statusMessage.classList.add('error');
+                    submitButton.disabled = false;
+                    return;
+                }
+            }
+
+            // Krok 2: Utwórz zgłoszenie (z informacją o załączniku lub bez)
+            statusMessage.textContent = 'Wysyłanie zgłoszenia...';
+            const ticketData = {
+                title: form.elements.title.value,
+                content: form.elements.content.value,
+                attachment: attachmentInfo
+            };
+
+            try {
+                const response = await fetch('/api/createTicket', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(ticketData)
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+                }
+
+                statusMessage.textContent = 'Zgłoszenie zostało pomyślnie utworzone! Przekierowywanie...';
+                statusMessage.classList.add('success');
+
+                setTimeout(() => {
+                    window.location.href = 'dashboard.html';
+                }, 2000);
+
+            } catch (error) {
+                console.error('Błąd podczas tworzenia zgłoszenia:', error);
+                statusMessage.textContent = `Błąd: ${error.message}`;
+                statusMessage.classList.add('error');
+                submitButton.disabled = false;
+            }
+        }
+
+        initializePage();
+        document.getElementById('new-ticket-form').addEventListener('submit', handleFormSubmit);
+    </script>
+</body>
+</html>
+

@@ -1,21 +1,23 @@
-/* --- Zmienne Globalne --- */
+/* --- Global & Layout --- */
 :root {
     --primary-blue: #3b82f6;
     --primary-blue-hover: #2563eb;
-    --bg-main: #f4f6f8; /* Tło głównej treści */
-    --bg-sidebar: #ffffff; /* Tło paska bocznego */
-    --bg-header: #ffffff; /* Tło nagłówka */
-    --border-color: #e5e7eb; /* Kolor ramek */
+    --light-gray-bg: #f4f6f8;
+    --medium-gray-bg: #e9ecef;
+    --gray-border: #dee2e6;
     --text-dark: #1f2937;
     --text-light: #6b7280;
     --white: #ffffff;
-    --status-open: #22c55e;
-    --status-closed: #ef4444;
+    --danger-red: #ef4444;
+    --success-green: #10b981;
+    --status-open-bg: #fef3c7;
+    --status-open-text: #92400e;
+    --status-closed-bg: #d1fae5;
+    --status-closed-text: #065f46;
     --border-radius: 8px;
     --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
 }
 
-/* --- Reset i Ustawienia Podstawowe --- */
 *, *::before, *::after {
     box-sizing: border-box;
     margin: 0;
@@ -24,42 +26,32 @@
 
 body {
     font-family: 'Inter', sans-serif;
-    background-color: var(--bg-main);
+    background-color: var(--light-gray-bg);
     color: var(--text-dark);
-    height: 100vh;
-    overflow: hidden; /* Zapobiega scrollowaniu całego body */
+    margin: 0;
+    padding: 0;
 }
 
-a {
-    text-decoration: none;
-    color: inherit;
-}
-
-.hidden {
-    display: none !important;
-}
-
-
-/* --- Układ Głównej Aplikacji (dashboard.html) --- */
+/* --- App Layout Structure --- */
 .app-layout {
     display: flex;
     flex-direction: column;
-    height: 100vh;
-    width: 100%;
+    min-height: 100vh;
 }
 
 .app-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    background-color: var(--white);
     padding: 16px 32px;
-    background-color: var(--bg-header);
-    border-bottom: 1px solid var(--border-color);
-    flex-shrink: 0; /* Zapobiega kurczeniu się nagłówka */
+    border-bottom: 1px solid var(--gray-border);
+    width: 100%;
+    box-shadow: var(--shadow);
 }
 
 .header-title {
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 600;
 }
 
@@ -70,61 +62,62 @@ a {
 }
 
 .btn-logout {
-    background-color: var(--primary-blue);
-    color: var(--white);
+    background-color: var(--light-gray-bg);
+    color: var(--text-dark);
     padding: 8px 16px;
     border-radius: var(--border-radius);
+    text-decoration: none;
     font-weight: 500;
+    border: 1px solid var(--gray-border);
     transition: background-color 0.2s;
 }
 
 .btn-logout:hover {
-    background-color: var(--primary-blue-hover);
+    background-color: var(--medium-gray-bg);
 }
 
 .app-body {
     display: flex;
-    flex-grow: 1; /* Pozwala temu elementowi wypełnić resztę wysokości */
-    overflow: hidden; /* Ważne dla poprawnego scrollowania */
+    flex: 1; /* Allows this container to grow and fill available space */
 }
 
 .sidebar {
     width: 240px;
-    flex-shrink: 0; /* Zapobiega kurczeniu się paska bocznego */
-    background-color: var(--bg-sidebar);
-    border-right: 1px solid var(--border-color);
-    padding: 24px 0;
+    background-color: var(--white);
+    padding: 24px;
+    border-right: 1px solid var(--gray-border);
+    flex-shrink: 0; /* Prevents sidebar from shrinking */
 }
 
 .sidebar-nav {
     display: flex;
     flex-direction: column;
+    gap: 8px;
 }
 
 .nav-item {
-    padding: 12px 24px;
-    font-size: 16px;
+    color: var(--text-dark);
+    text-decoration: none;
+    padding: 12px 16px;
+    border-radius: var(--border-radius);
     font-weight: 500;
-    color: var(--text-light);
-    border-left: 3px solid transparent;
-    transition: all 0.2s;
+    transition: background-color 0.2s, color 0.2s;
 }
 
 .nav-item:hover {
-    background-color: var(--bg-main);
-    color: var(--text-dark);
+    background-color: var(--light-gray-bg);
 }
 
 .nav-item.active {
-    color: var(--primary-blue);
-    border-left-color: var(--primary-blue);
-    background-color: #eef2ff;
+    background-color: var(--primary-blue);
+    color: var(--white);
 }
 
 .main-content {
-    flex-grow: 1;
+    flex-grow: 1; /* Allows main content to take up remaining space */
     padding: 32px;
-    overflow-y: auto; /* Pozwala scrollować tylko główną treść */
+    background-color: var(--light-gray-bg);
+    overflow-y: auto; /* Adds scrollbar if content is too long */
 }
 
 .main-content h1 {
@@ -132,32 +125,60 @@ a {
     margin-bottom: 24px;
 }
 
+.app-footer {
+    text-align: center;
+    padding: 16px;
+    background-color: var(--white);
+    border-top: 1px solid var(--gray-border);
+    color: var(--text-light);
+    font-size: 14px;
+}
+
+/* --- Ticket List (dashboard.html) --- */
 .ticket-list h2 {
-    font-size: 20px;
+    font-size: 22px;
     margin-bottom: 16px;
-    color: var(--text-dark);
+    font-weight: 600;
+}
+
+#tickets-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
 }
 
 .ticket-card {
     background-color: var(--white);
     border-radius: var(--border-radius);
-    padding: 24px;
-    margin-bottom: 16px;
     box-shadow: var(--shadow);
+    padding: 20px;
     display: flex;
     align-items: center;
-    gap: 24px;
+    gap: 20px;
+    transition: box-shadow 0.2s;
+}
+
+.ticket-card:hover {
+    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 }
 
 .ticket-status {
-    padding: 4px 12px;
-    border-radius: 999px;
+    padding: 6px 12px;
+    border-radius: 9999px; /* Pill shape */
     font-weight: 600;
-    color: var(--white);
+    font-size: 12px;
     flex-shrink: 0;
 }
-.ticket-status.status-open { background-color: var(--status-open); }
-.ticket-status.status-closed { background-color: var(--status-closed); }
+
+.ticket-status.status-open {
+    background-color: var(--status-open-bg);
+    color: var(--status-open-text);
+}
+
+.ticket-status.status-closed {
+    background-color: var(--status-closed-bg);
+    color: var(--status-closed-text);
+}
 
 .ticket-details {
     flex-grow: 1;
@@ -165,61 +186,78 @@ a {
 
 .ticket-details h3 {
     font-size: 18px;
-    margin-bottom: 4px;
+    margin-bottom: 8px;
 }
-.ticket-details p {
+
+.ticket-meta {
+    display: flex;
+    gap: 16px;
+    font-size: 14px;
     color: var(--text-light);
 }
 
 .btn-details {
-    background-color: transparent;
-    border: 1px solid var(--border-color);
-    color: var(--text-dark);
-    padding: 8px 16px;
+    background-color: var(--primary-blue);
+    color: var(--white);
+    padding: 10px 20px;
     border-radius: var(--border-radius);
+    text-decoration: none;
     font-weight: 500;
-    transition: all 0.2s;
+    transition: background-color 0.2s;
 }
 
 .btn-details:hover {
-    background-color: var(--bg-main);
-    border-color: #c3c8d0;
+    background-color: var(--primary-blue-hover);
 }
 
-/* --- Style dla strony logowania (index.html) i błędu (unauthorized.html) --- */
-.login-container, .unauthorized-container {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-    padding: 20px;
-    background-color: #e9ecef;
-}
-
-.panel {
-    width: 100%;
-    max-width: 500px;
+/* --- New Ticket Form (new-ticket.html) --- */
+.form-container {
     background-color: var(--white);
+    padding: 24px;
     border-radius: var(--border-radius);
     box-shadow: var(--shadow);
-    padding: 40px;
-    text-align: center;
+    max-width: 700px;
 }
 
-.panel h1, .panel h2 {
-    font-size: 24px;
-    margin-bottom: 24px;
+.form-group {
+    margin-bottom: 20px;
 }
 
-.panel p {
-    color: var(--text-light);
-    margin-bottom: 24px;
-    line-height: 1.6;
+.form-group label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 8px;
 }
 
-.button-login {
-    display: inline-block;
+.form-group input[type="text"],
+.form-group textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--gray-border);
+    border-radius: var(--border-radius);
+    font-size: 16px;
+    font-family: 'Inter', sans-serif;
+}
+
+.form-group textarea {
+    resize: vertical;
+}
+
+.file-input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--gray-border);
+    border-radius: var(--border-radius);
+    font-size: 14px;
+}
+
+.form-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.btn.btn-primary {
     background-color: var(--primary-blue);
     color: var(--white);
     border: none;
@@ -229,21 +267,32 @@ a {
     font-weight: 500;
     cursor: pointer;
     transition: background-color 0.2s;
-    text-decoration: none;
 }
 
-.button-login:hover {
+.btn.btn-primary:hover {
     background-color: var(--primary-blue-hover);
 }
 
-.logout-button {
-    background-color: var(--danger-red);
+.btn.btn-primary:disabled {
+    background-color: var(--medium-gray-bg);
+    cursor: not-allowed;
 }
 
-.footer {
-    position: absolute;
-    bottom: 20px;
-    color: var(--text-light);
-    font-size: 14px;
+#form-status {
+    font-weight: 500;
+}
+
+#form-status.success {
+    color: var(--success-green);
+}
+
+#form-status.error {
+    color: var(--danger-red);
+}
+
+
+/* --- Utility --- */
+.hidden {
+    display: none !important;
 }
 
