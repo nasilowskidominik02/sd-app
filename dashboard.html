@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Panel Główny - Service Desk App</title>
+    <title>Moje Zgłoszenia - Service Desk App</title>
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -28,22 +28,19 @@
             <!-- Pasek boczny z nawigacją -->
             <aside class="sidebar">
                 <nav class="sidebar-nav">
-                    <a href="#" class="nav-item active">Panel Główny</a>
-                    <a href="#" class="nav-item">Nowe zgłoszenie</a>
-                    <a href="#" class="nav-item">Moje zgłoszenia</a>
-                    <!-- Link do panelu administracyjnego, ukryty dla user, widoczny dla sd -->
+                    <a href="dashboard.html" class="nav-item active">Moje zgłoszenia</a>
+                    <a href="new-ticket.html" class="nav-item">Nowe zgłoszenie</a>
                     <a href="#" id="admin-link" class="nav-item hidden">Panel Administracyjny</a> 
                 </nav>
             </aside>
             
             <!-- Główna zawartość strony -->
             <main class="main-content">
-                <h1>Panel Główny</h1>
-                <!-- Kontener na listę zgłoszeń - teraz dynamiczny -->
+                <h1 id="dashboard-title">Twoje ostatnie zgłoszenia</h1>
+                
                 <div class="ticket-list">
-                    <h2 id="ticket-list-title">Twoje ostatnie zgłoszenia</h2>
-                    <!-- Zgłoszenia zostaną wstawione tutaj przez JavaScript -->
                     <div id="tickets-container">
+                        <!-- Zgłoszenia będą dynamicznie ładowane tutaj -->
                         <p>Ładowanie zgłoszeń...</p>
                     </div>
                 </div>
@@ -57,9 +54,21 @@
     </div>
     
     <script>
-        // Funkcja do pobierania i wyświetlania zgłoszeń
+        // --- Helper function to prevent XSS ---
+        function escapeHTML(str) {
+            if (str === null || str === undefined) {
+                return '';
+            }
+            return str.toString()
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
         async function loadTickets() {
-            const container = document.getElementById('tickets-container');
+            const ticketsContainer = document.getElementById('tickets-container');
             try {
                 const response = await fetch('/api/getTickets');
                 if (!response.ok) {
@@ -67,39 +76,39 @@
                 }
                 const tickets = await response.json();
 
-                // Czyścimy kontener z komunikatu "Ładowanie..."
-                container.innerHTML = '';
+                ticketsContainer.innerHTML = ''; // Clear "loading" message
 
                 if (tickets.length === 0) {
-                    container.innerHTML = '<p>Nie znaleziono żadnych zgłoszeń.</p>';
+                    ticketsContainer.innerHTML = '<p>Brak zgłoszeń do wyświetlenia.</p>';
                     return;
                 }
 
-                // Generujemy HTML dla każdego zgłoszenia
                 tickets.forEach(ticket => {
+                    const ticketCard = document.createElement('div');
+                    ticketCard.className = 'ticket-card';
+
                     const statusClass = ticket.status === 'Nowe' ? 'status-open' : 'status-closed';
-                    // Formatowanie daty dla lepszej czytelności
-                    const creationDate = new Date(ticket.dates.createdAt).toLocaleString('pl-PL');
-                    
-                    const ticketCard = `
-                        <div class="ticket-card">
-                            <div class="ticket-status ${statusClass}">${ticket.status}</div>
-                            <div class="ticket-details">
-                                <h3>${ticket.title}</h3>
-                                <div class="ticket-meta">
-                                    <span>Zgłaszający: <strong>${ticket.reportingUser.name}</strong></span>
-                                    <span>Utworzono: ${creationDate}</span>
-                                </div>
+                    const formattedDate = new Date(ticket.dates.createdAt).toLocaleString('pl-PL');
+                    const guaranteedDate = ticket.dates.guaranteedResolutionAt ? new Date(ticket.dates.guaranteedResolutionAt).toLocaleString('pl-PL') : 'Brak';
+
+                    ticketCard.innerHTML = `
+                        <div class="ticket-status ${statusClass}">${escapeHTML(ticket.status)}</div>
+                        <div class="ticket-details">
+                            <h3>${escapeHTML(ticket.title)}</h3>
+                            <div class="ticket-meta">
+                                <span><strong>Zgłaszający:</strong> ${escapeHTML(ticket.reportingUser.name)}</span>
+                                <span><strong>Utworzono:</strong> ${formattedDate}</span>
+                                <span><strong>SLA:</strong> ${guaranteedDate}</span>
                             </div>
-                            <a href="#" class="btn-details">Zobacz szczegóły</a>
                         </div>
+                        <a href="#" class="btn-details">Zobacz szczegóły</a>
                     `;
-                    container.innerHTML += ticketCard;
+                    ticketsContainer.appendChild(ticketCard);
                 });
 
             } catch (error) {
                 console.error('Błąd podczas pobierania zgłoszeń:', error);
-                container.innerHTML = '<p>Wystąpił błąd podczas ładowania zgłoszeń. Spróbuj ponownie później.</p>';
+                ticketsContainer.innerHTML = '<p class="error-message">Wystąpił błąd podczas ładowania zgłoszeń. Spróbuj ponownie później.</p>';
             }
         }
 
@@ -113,26 +122,29 @@
                     return;
                 }
 
-                document.getElementById('userName').textContent = data.clientPrincipal.userDetails;
-
-                const isServiceDesk = data.clientPrincipal.userRoles.includes('sd');
+                const userDetails = data.clientPrincipal;
+                document.getElementById('userName').textContent = userDetails.userDetails;
+                
+                const isServiceDesk = userDetails.userRoles.includes('sd');
+                
                 if (isServiceDesk) {
                     document.getElementById('admin-link').classList.remove('hidden');
-                    // Zmiana tytułu listy dla użytkownika SD
-                    document.getElementById('ticket-list-title').textContent = 'Wszystkie ostatnie zgłoszenia';
+                    document.getElementById('dashboard-title').textContent = "Wszystkie ostatnie zgłoszenia";
                 }
 
-                // Po pomyślnej weryfikacji użytkownika, ładujemy zgłoszenia
+                // Load tickets after user info is confirmed
                 loadTickets();
 
             } catch (error) {
                 console.error('Błąd inicjalizacji panelu:', error);
-                window.location.href = 'index.html';
+                // Redirect to login if auth check fails
+                 window.location.href = 'index.html';
             }
         }
 
         initializeDashboard();
     </script>
+
 </body>
 </html>
 
