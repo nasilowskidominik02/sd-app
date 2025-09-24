@@ -96,8 +96,7 @@ a
     font-family: 'Inter', sans-serif;
     background-color: #8d9297;
     color: var(--text-dark);
-    display: flex;
-    flex-direction: column;
+   
     height: 100%;
 }
 
