@@ -7,25 +7,34 @@
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>Service Desk App</h1>
-        </header>
-        <main>
-            <div class="login-panel">
-                <p class="login-instruction">
-                    Zostaniesz przekierowany na stronę logowania Microsoft. <br>
-                    Użyj danych (e-mail i hasło), które otrzymałeś od administratora. <br>
-                    Jeżeli nie otrzymałeś danych lub ich nie pamiętasz - skontaktuj się z administratorem <br>
-                </p>
-                <br><br>
-                <a href="/.auth/login/aad" class="button-login">Przejdź do logowania</a>
+    <div class="app-layout">
+        <!-- Górny baner na całą szerokość -->
+        <header class="app-header">
+            <div class="header-title">
+                Aplikacja do zgłaszania problemów do Service Desk
             </div>
-        </main>
-        <footer class="footer">
+            <!-- W nagłówku nie ma informacji o użytkowniku, bo nie jest zalogowany -->
+        </header>
+
+        <!-- Główna część aplikacji -->
+        <div class="app-body-centered">
+            <main class="main-content">
+                <div class="login-container">
+                    <h1>Witaj w Service Desk</h1>
+                    <p class="login-instruction">
+                        Zostaniesz przekierowany na stronę logowania Microsoft. <br>
+                        Użyj danych (e-mail i hasło), które otrzymałeś od administratora.
+                    </p>
+                    <a href="/.auth/login/aad" class="button-login">Przejdź do logowania</a>
+                </div>
+            </main>
+        </div>
+
+        <!-- Stopka Aplikacji -->
+        <footer class="app-footer">
             <p>Dominik Nasiłowski 2026 (R)</p>
         </footer>
     </div>
@@ -39,10 +48,10 @@
                 
                 if (data.clientPrincipal) {
                     // Użytkownik jest zalogowany, więc automatycznie przekierowujemy go do dashboardu.
-                    window.location.href = '/dashboard.html';
+                    window.location.href = 'dashboard.html';
                 }
                 // Jeśli nie jest zalogowany (clientPrincipal jest null), nic nie robimy,
-                // użytkownik po prostu widzi normalny przycisk logowania.
+                // użytkownik po prostu widzi stronę logowania.
 
             } catch (error) {
                 console.error('Błąd podczas sprawdzania statusu logowania:', error);
