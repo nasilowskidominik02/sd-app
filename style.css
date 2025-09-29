@@ -224,7 +224,6 @@ a:hover {
     background-color: #f9fafb;
 }
 
-
 .status-badge {
     display: inline-block;
     padding: 4px 12px;
@@ -236,7 +235,6 @@ a:hover {
 }
 
 .status-badge.status-nieprzeczytane { background-color: var(--status-nieprzeczytane); }
-/* POPRAWKA PONIŻEJ */
 .status-badge.status-otwarte { background-color: var(--status-otwarte); }
 .status-badge.status-zamknięte { background-color: var(--status-zamknięte); }
 
@@ -476,5 +474,49 @@ textarea.form-control {
 .modal-status.error {
     color: #721c24;
     background-color: #f8d7da;
+}
+
+/* --- Comments Section in Modal --- */
+.comments-section {
+    margin-top: 32px;
+}
+
+.comment-list {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.comment {
+    background-color: var(--light-gray-bg);
+    border: 1px solid var(--gray-border);
+    border-radius: var(--border-radius);
+    padding: 16px;
+}
+
+.comment-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+    color: var(--text-light);
+    margin-bottom: 8px;
+}
+
+.comment-author {
+    font-weight: 600;
+}
+
+.comment-body {
+    white-space: pre-wrap; /* Preserve line breaks in comments */
+}
+
+.add-comment-form {
+    margin-top: 24px;
+}
+
+.add-comment-form textarea {
+    min-height: 80px;
 }
 
