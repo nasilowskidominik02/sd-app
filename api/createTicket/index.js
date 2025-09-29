@@ -1,11 +1,9 @@
 const { CosmosClient } = require("@azure/cosmos");
+const { v4: uuidv4 } = require('uuid');
 
 /**
  * Oblicza gwarantowaną datę rozwiązania (SLA) na podstawie daty startowej i kategorii.
  * Uwzględnia tylko godziny robocze (pon-pt 8:00-16:00).
- * @param {Date} startDate - Data i godzina rozpoczęcia liczenia.
- * @param {string} category - Kategoria zgłoszenia.
- * @returns {Date} Obliczona data SLA.
  */
 function calculateSLA(startDate, category) {
     const slaHours = {
@@ -15,10 +13,10 @@ function calculateSLA(startDate, category) {
         "Infrastruktura": 12,
         "Konto": 4,
         "Aplikacje": 48,
-        "Nieprzypisane": 8 // Domyślne SLA, jeśli kategoria nie jest jeszcze znana
+        "Inne": 8 // Domyślne SLA dla nowo utworzonych zgłoszeń
     };
 
-    let hoursToAdd = slaHours[category] || 8; // Pobierz godziny SLA lub użyj domyślnej wartości
+    let hoursToAdd = slaHours[category] || 8;
     let currentDate = new Date(startDate);
     
     while (hoursToAdd > 0) {
@@ -26,7 +24,6 @@ function calculateSLA(startDate, category) {
         const dayOfWeek = currentDate.getDay(); // 0=Niedziela, 6=Sobota
         const hourOfDay = currentDate.getHours();
 
-        // Liczymy tylko dni robocze (poniedziałek-piątek) w godzinach 8-16
         if (dayOfWeek >= 1 && dayOfWeek <= 5 && hourOfDay > 8 && hourOfDay <= 16) {
             hoursToAdd--;
         }
@@ -34,11 +31,9 @@ function calculateSLA(startDate, category) {
     return currentDate;
 }
 
-
 module.exports = async function (context, req) {
     context.log('JavaScript HTTP trigger function processed a request to create a ticket.');
 
-    // Krok 1: Pobierz dane zalogowanego użytkownika z nagłówka
     const header = req.headers['x-ms-client-principal'];
     if (!header) {
         context.res = { status: 401, body: "User is not authenticated." };
@@ -48,7 +43,6 @@ module.exports = async function (context, req) {
     const decoded = encoded.toString('ascii');
     const clientPrincipal = JSON.parse(decoded);
 
-    // Krok 2: Pobierz dane zgłoszenia z ciała żądania
     const { title, content, attachment } = req.body;
 
     if (!title || !content) {
@@ -56,30 +50,29 @@ module.exports = async function (context, req) {
         return;
     }
 
-    // Krok 3: Przygotuj kompletny obiekt nowego zgłoszenia
     const now = new Date();
     const newTicket = {
+        id: uuidv4(), // Generuje unikalny, niezmienny identyfikator
         title: title,
-        category: "Nieprzypisane", // Domyślna kategoria, zgodnie z ustaleniami
-        status: "Nowe",
+        category: "Inne", // Domyślna kategoria
+        status: "Nieprzeczytane", // Domyślny status
         content: content,
         reportingUser: {
             email: clientPrincipal.userDetails,
             name: clientPrincipal.userDetails 
         },
         assignedTo: {
-            person: null, // Na razie nikt nie jest przypisany indywidualnie
+            person: null,
             group: "Pierwsza linia wsparcia"
         },
         dates: {
             createdAt: now.toISOString(),
             closedAt: null,
-            guaranteedResolutionAt: calculateSLA(now, "Nieprzypisane").toISOString()
+            guaranteedResolutionAt: calculateSLA(now, "Inne").toISOString()
         },
-        attachments: attachment ? [attachment] : [] // Dodaj załącznik, jeśli został przesłany
+        attachments: attachment ? [attachment] : []
     };
 
-    // Krok 4: Zapisz zgłoszenie w bazie danych
     try {
         const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
         const database = client.database("ServiceDeskDB");
@@ -88,7 +81,7 @@ module.exports = async function (context, req) {
         const { resource: createdItem } = await container.items.create(newTicket);
 
         context.res = {
-            status: 201, // 201 Created - standardowa odpowiedź po pomyślnym utworzeniu zasobu
+            status: 201,
             body: createdItem
         };
     } catch (error) {

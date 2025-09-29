@@ -1,19 +1,17 @@
-/* --- Global & Layout --- */
+/* Reset and Global Styles */
 :root {
     --primary-blue: #3b82f6;
     --primary-blue-hover: #2563eb;
-    --light-gray-bg: #f4f6f8;
-    --medium-gray-bg: #e9ecef;
-    --gray-border: #dee2e6;
+    --light-gray-bg: #f4f6f8; /* Very light gray for backgrounds */
+    --medium-gray-bg: #e9ecef; /* Slightly darker gray */
+    --gray-border: #dee2e6; /* Border gray */
     --text-dark: #1f2937;
     --text-light: #6b7280;
     --white: #ffffff;
     --danger-red: #ef4444;
-    --success-green: #10b981;
-    --status-open-bg: #fef3c7;
-    --status-open-text: #92400e;
-    --status-closed-bg: #d1fae5;
-    --status-closed-text: #065f46;
+    --status-nieprzeczytane: #ffc107; /* Amber */
+    --status-otwarte: #28a745; /* Green */
+    --status-zamknięte: #6c757d; /* Gray */
     --border-radius: 8px;
     --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
 }
@@ -30,24 +28,39 @@ body {
     color: var(--text-dark);
     margin: 0;
     padding: 0;
+    height: 100vh;
+    overflow: hidden; /* Prevent body scroll */
 }
 
-/* --- App Layout Structure --- */
+a {
+    text-decoration: none;
+    color: var(--primary-blue);
+    transition: color 0.2s;
+}
+
+a:hover {
+    color: var(--primary-blue-hover);
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* --- App Layout --- */
 .app-layout {
     display: flex;
     flex-direction: column;
-    min-height: 100vh;
+    height: 100vh;
 }
 
 .app-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background-color: var(--white);
     padding: 16px 32px;
+    background-color: var(--white);
     border-bottom: 1px solid var(--gray-border);
-    width: 100%;
-    box-shadow: var(--shadow);
+    flex-shrink: 0;
 }
 
 .header-title {
@@ -62,23 +75,30 @@ body {
 }
 
 .btn-logout {
-    background-color: var(--light-gray-bg);
+    background-color: transparent;
+    border: 1px solid var(--gray-border);
     color: var(--text-dark);
     padding: 8px 16px;
     border-radius: var(--border-radius);
-    text-decoration: none;
+    cursor: pointer;
     font-weight: 500;
-    border: 1px solid var(--gray-border);
-    transition: background-color 0.2s;
 }
 
 .btn-logout:hover {
-    background-color: var(--medium-gray-bg);
+    background-color: var(--light-gray-bg);
 }
 
 .app-body {
     display: flex;
-    flex: 1; /* Allows this container to grow and fill available space */
+    flex-grow: 1;
+    overflow: hidden;
+}
+
+.app-body-centered {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-grow: 1;
 }
 
 .sidebar {
@@ -86,7 +106,7 @@ body {
     background-color: var(--white);
     padding: 24px;
     border-right: 1px solid var(--gray-border);
-    flex-shrink: 0; /* Prevents sidebar from shrinking */
+    flex-shrink: 0;
 }
 
 .sidebar-nav {
@@ -96,28 +116,22 @@ body {
 }
 
 .nav-item {
-    color: var(--text-dark);
-    text-decoration: none;
+    display: block;
     padding: 12px 16px;
     border-radius: var(--border-radius);
     font-weight: 500;
-    transition: background-color 0.2s, color 0.2s;
+    color: var(--text-dark);
 }
 
-.nav-item:hover {
-    background-color: var(--light-gray-bg);
-}
-
-.nav-item.active {
-    background-color: var(--primary-blue);
-    color: var(--white);
+.nav-item.active, .nav-item:hover {
+    background-color: var(--medium-gray-bg);
+    color: var(--text-dark);
 }
 
 .main-content {
-    flex-grow: 1; /* Allows main content to take up remaining space */
+    flex-grow: 1;
     padding: 32px;
-    background-color: var(--light-gray-bg);
-    overflow-y: auto; /* Adds scrollbar if content is too long */
+    overflow-y: auto; /* Enable scroll only for main content */
 }
 
 .main-content h1 {
@@ -126,101 +140,134 @@ body {
 }
 
 .app-footer {
-    text-align: center;
-    padding: 16px;
+    padding: 16px 32px;
     background-color: var(--white);
     border-top: 1px solid var(--gray-border);
     color: var(--text-light);
     font-size: 14px;
-}
-
-/* --- Ticket List (dashboard.html) --- */
-.ticket-list h2 {
-    font-size: 22px;
-    margin-bottom: 16px;
-    font-weight: 600;
-}
-
-#tickets-container {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-
-.ticket-card {
-    background-color: var(--white);
-    border-radius: var(--border-radius);
-    box-shadow: var(--shadow);
-    padding: 20px;
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    transition: box-shadow 0.2s;
-}
-
-.ticket-card:hover {
-    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-}
-
-.ticket-status {
-    padding: 6px 12px;
-    border-radius: 9999px; /* Pill shape */
-    font-weight: 600;
-    font-size: 12px;
+    text-align: center;
     flex-shrink: 0;
 }
 
-.ticket-status.status-open {
-    background-color: var(--status-open-bg);
-    color: var(--status-open-text);
+/* --- Login Page Specifics --- */
+.login-container {
+    max-width: 450px;
+    width: 100%;
+    background-color: var(--white);
+    padding: 40px;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow);
+    text-align: center;
 }
 
-.ticket-status.status-closed {
-    background-color: var(--status-closed-bg);
-    color: var(--status-closed-text);
-}
-
-.ticket-details {
-    flex-grow: 1;
-}
-
-.ticket-details h3 {
-    font-size: 18px;
-    margin-bottom: 8px;
-}
-
-.ticket-meta {
-    display: flex;
-    gap: 16px;
-    font-size: 14px;
+.login-instruction {
     color: var(--text-light);
+    margin: 16px 0 32px;
+    line-height: 1.6;
 }
 
-.btn-details {
+.button-login {
+    display: inline-block;
+    width: 100%;
     background-color: var(--primary-blue);
     color: var(--white);
-    padding: 10px 20px;
+    padding: 12px;
     border-radius: var(--border-radius);
-    text-decoration: none;
+    font-size: 16px;
     font-weight: 500;
+    cursor: pointer;
     transition: background-color 0.2s;
+    border: none;
 }
 
-.btn-details:hover {
+.button-login:hover {
     background-color: var(--primary-blue-hover);
 }
 
-/* --- New Ticket Form (new-ticket.html) --- */
-.form-container {
+/* --- Dashboard Table Styles --- */
+.table-container {
     background-color: var(--white);
-    padding: 24px;
     border-radius: var(--border-radius);
     box-shadow: var(--shadow);
-    max-width: 700px;
+    overflow-x: auto;
+}
+
+.ticket-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.ticket-table th, .ticket-table td {
+    padding: 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--gray-border);
+    white-space: nowrap;
+}
+
+.ticket-table thead th {
+    background-color: var(--light-gray-bg);
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-light);
+    text-transform: uppercase;
+}
+
+.ticket-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.ticket-table tbody tr:hover {
+    background-color: #f9fafb;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 9999px;
+    font-weight: 500;
+    font-size: 12px;
+    color: var(--white);
+    text-transform: capitalize;
+}
+
+.status-badge.status-nieprzeczytane { background-color: var(--status-nieprzeczytane); }
+.status-badge.status-otwarte { background-color: var(--status-otwarte); }
+.status-badge.status-zamknięte { background-color: var(--status-zamknięte); }
+
+/* --- Pagination --- */
+.pagination {
+    margin-top: 24px;
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+}
+
+.page-btn {
+    border: 1px solid var(--gray-border);
+    background-color: var(--white);
+    padding: 8px 16px;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.page-btn:hover {
+    background-color: var(--light-gray-bg);
+}
+
+.page-btn.active {
+    background-color: var(--primary-blue);
+    color: var(--white);
+    border-color: var(--primary-blue);
+}
+
+/* --- New Ticket Form --- */
+.form-container {
+    max-width: 800px;
 }
 
 .form-group {
-    margin-bottom: 20px;
+    margin-bottom: 24px;
 }
 
 .form-group label {
@@ -229,8 +276,7 @@ body {
     margin-bottom: 8px;
 }
 
-.form-group input[type="text"],
-.form-group textarea {
+.form-control {
     width: 100%;
     padding: 12px;
     border: 1px solid var(--gray-border);
@@ -239,25 +285,12 @@ body {
     font-family: 'Inter', sans-serif;
 }
 
-.form-group textarea {
+textarea.form-control {
+    min-height: 150px;
     resize: vertical;
 }
 
-.file-input {
-    width: 100%;
-    padding: 8px;
-    border: 1px solid var(--gray-border);
-    border-radius: var(--border-radius);
-    font-size: 14px;
-}
-
-.form-actions {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-
-.btn.btn-primary {
+.btn-submit {
     background-color: var(--primary-blue);
     color: var(--white);
     border: none;
@@ -269,30 +302,48 @@ body {
     transition: background-color 0.2s;
 }
 
-.btn.btn-primary:hover {
+.btn-submit:hover {
     background-color: var(--primary-blue-hover);
 }
 
-.btn.btn-primary:disabled {
-    background-color: var(--medium-gray-bg);
+.btn-submit:disabled {
+    background-color: var(--gray-border);
     cursor: not-allowed;
 }
 
-#form-status {
-    font-weight: 500;
+.upload-feedback {
+    margin-top: 8px;
+    font-size: 14px;
+    color: var(--text-light);
 }
 
-#form-status.success {
-    color: var(--success-green);
+/* --- Unauthorized Page --- */
+.panel {
+    width: 100%;
+    max-width: 500px;
+    background-color: var(--white);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow);
+    padding: 40px;
+    text-align: center;
 }
 
-#form-status.error {
-    color: var(--danger-red);
+.panel h2 {
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 16px;
 }
 
+.panel p {
+    line-height: 1.6;
+    margin-bottom: 24px;
+}
 
-/* --- Utility --- */
-.hidden {
-    display: none !important;
+.logout-button {
+    background-color: var(--danger-red);
+    color: var(--white);
+    border: none;
+    padding: 12px;
+    border-radius: var(--border-radius);
 }
 

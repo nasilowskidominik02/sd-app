@@ -1,0 +1,10 @@
+Kategorie zgłoszeń i ich SLA (w godzinach):
+"Instalacja oprogramowania": 4,
+        "Konfiguracja oprogramowania": 4,
+        "Hardware": 24,
+        "Infrastruktura": 12,
+        "Konto": 4,
+        "Aplikacje": 48,
+        "Inne": 8 // Domyślne SLA dla nowo utworzonych zgłoszeń
+
+

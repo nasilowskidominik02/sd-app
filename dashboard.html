@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Moje Zgłoszenia - Service Desk App</title>
+    <title>Panel Główny - Service Desk App</title>
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -38,11 +38,28 @@
             <main class="main-content">
                 <h1 id="dashboard-title">Twoje ostatnie zgłoszenia</h1>
                 
-                <div class="ticket-list">
-                    <div id="tickets-container">
-                        <!-- Zgłoszenia będą dynamicznie ładowane tutaj -->
-                        <p>Ładowanie zgłoszeń...</p>
-                    </div>
+                <div class="table-container">
+                    <table class="ticket-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Status</th>
+                                <th>Tytuł</th>
+                                <th>Użytkownik</th>
+                                <th>Kategoria</th>
+                                <th>Odpowiedzialny</th>
+                                <th>Grupa</th>
+                                <th>Utworzono</th>
+                                <th>SLA</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tickets-tbody">
+                            <!-- Wiersze z danymi będą dynamicznie ładowane tutaj -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="pagination-container" class="pagination">
+                    <!-- Przyciski paginacji będą dynamicznie ładowane tutaj -->
                 </div>
             </main>
         </div>
@@ -54,7 +71,7 @@
     </div>
     
     <script>
-        // --- Helper function to prevent XSS ---
+        // --- Pomocnicza funkcja do unikania ataków XSS ---
         function escapeHTML(str) {
             if (str === null || str === undefined) {
                 return '';
@@ -67,48 +84,68 @@
                 .replace(/'/g, '&#039;');
         }
 
-        async function loadTickets() {
-            const ticketsContainer = document.getElementById('tickets-container');
+        function renderPagination(currentPage, totalPages) {
+            const paginationContainer = document.getElementById('pagination-container');
+            paginationContainer.innerHTML = ''; // Wyczyść stare przyciski
+
+            for (let i = 1; i <= totalPages; i++) {
+                const pageButton = document.createElement('button');
+                pageButton.className = 'page-btn';
+                pageButton.textContent = i;
+                if (i === currentPage) {
+                    pageButton.classList.add('active');
+                }
+                pageButton.onclick = () => loadTickets(i);
+                paginationContainer.appendChild(pageButton);
+            }
+        }
+
+        async function loadTickets(page = 1) {
+            const ticketsTbody = document.getElementById('tickets-tbody');
+            ticketsTbody.innerHTML = '<tr><td colspan="9">Ładowanie zgłoszeń...</td></tr>';
+            
             try {
-                const response = await fetch('/api/getTickets');
+                const response = await fetch(`/api/getTickets?page=${page}`);
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
-                const tickets = await response.json();
+                const data = await response.json();
+                const { tickets, totalCount, currentPage, totalPages } = data;
 
-                ticketsContainer.innerHTML = ''; // Clear "loading" message
+                ticketsTbody.innerHTML = ''; // Wyczyść komunikat "ładowanie"
 
                 if (tickets.length === 0) {
-                    ticketsContainer.innerHTML = '<p>Brak zgłoszeń do wyświetlenia.</p>';
+                    ticketsTbody.innerHTML = '<tr><td colspan="9">Brak zgłoszeń do wyświetlenia.</td></tr>';
+                    renderPagination(0, 0); // Wyczyść paginację
                     return;
                 }
 
                 tickets.forEach(ticket => {
-                    const ticketCard = document.createElement('div');
-                    ticketCard.className = 'ticket-card';
+                    const row = ticketsTbody.insertRow();
+                    const statusClass = `status-${ticket.status.toLowerCase().replace(' ', '-')}`;
+                    
+                    // Skrócenie ID do 8 znaków dla lepszej czytelności w tabeli
+                    const shortId = ticket.id.substring(0, 8);
+                    const assignedPerson = ticket.assignedTo.person || '---';
 
-                    const statusClass = ticket.status === 'Nowe' ? 'status-open' : 'status-closed';
-                    const formattedDate = new Date(ticket.dates.createdAt).toLocaleString('pl-PL');
-                    const guaranteedDate = ticket.dates.guaranteedResolutionAt ? new Date(ticket.dates.guaranteedResolutionAt).toLocaleString('pl-PL') : 'Brak';
-
-                    ticketCard.innerHTML = `
-                        <div class="ticket-status ${statusClass}">${escapeHTML(ticket.status)}</div>
-                        <div class="ticket-details">
-                            <h3>${escapeHTML(ticket.title)}</h3>
-                            <div class="ticket-meta">
-                                <span><strong>Zgłaszający:</strong> ${escapeHTML(ticket.reportingUser.name)}</span>
-                                <span><strong>Utworzono:</strong> ${formattedDate}</span>
-                                <span><strong>SLA:</strong> ${guaranteedDate}</span>
-                            </div>
-                        </div>
-                        <a href="#" class="btn-details">Zobacz szczegóły</a>
+                    row.innerHTML = `
+                        <td>${escapeHTML(shortId)}</td>
+                        <td><span class="status-badge ${statusClass}">${escapeHTML(ticket.status)}</span></td>
+                        <td>${escapeHTML(ticket.title)}</td>
+                        <td>${escapeHTML(ticket.reportingUser.name)}</td>
+                        <td>${escapeHTML(ticket.category)}</td>
+                        <td>${escapeHTML(assignedPerson)}</td>
+                        <td>${escapeHTML(ticket.assignedTo.group)}</td>
+                        <td>${new Date(ticket.dates.createdAt).toLocaleString('pl-PL')}</td>
+                        <td>${new Date(ticket.dates.guaranteedResolutionAt).toLocaleString('pl-PL')}</td>
                     `;
-                    ticketsContainer.appendChild(ticketCard);
                 });
+
+                renderPagination(currentPage, totalPages);
 
             } catch (error) {
                 console.error('Błąd podczas pobierania zgłoszeń:', error);
-                ticketsContainer.innerHTML = '<p class="error-message">Wystąpił błąd podczas ładowania zgłoszeń. Spróbuj ponownie później.</p>';
+                ticketsTbody.innerHTML = '<tr><td colspan="9" class="error-message">Wystąpił błąd podczas ładowania zgłoszeń.</td></tr>';
             }
         }
 
@@ -132,12 +169,10 @@
                     document.getElementById('dashboard-title').textContent = "Wszystkie ostatnie zgłoszenia";
                 }
 
-                // Load tickets after user info is confirmed
                 loadTickets();
 
             } catch (error) {
                 console.error('Błąd inicjalizacji panelu:', error);
-                // Redirect to login if auth check fails
                  window.location.href = 'index.html';
             }
         }

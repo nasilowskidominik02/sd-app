@@ -3,60 +3,78 @@ const { CosmosClient } = require("@azure/cosmos");
 module.exports = async function (context, req) {
     context.log('JavaScript HTTP trigger function processed a request to get tickets.');
 
-    // Krok 1: Pobierz informacje o zalogowanym użytkowniku z nagłówka
-    const header = req.headers["x-ms-client-principal"];
+    const header = req.headers['x-ms-client-principal'];
     if (!header) {
-        context.res = { status: 401, body: "Brak uwierzytelnienia. Użytkownik nie jest zalogowany." };
+        context.res = { status: 401, body: "User is not authenticated." };
         return;
     }
-    const encoded = Buffer.from(header, "base64");
-    const clientPrincipal = JSON.parse(encoded.toString("ascii"));
-    
-    const userRoles = clientPrincipal.userRoles;
+    const encoded = Buffer.from(header, 'base64');
+    const decoded = encoded.toString('ascii');
+    const clientPrincipal = JSON.parse(decoded);
+
+    const isServiceDesk = clientPrincipal.userRoles.includes('sd');
     const userEmail = clientPrincipal.userDetails;
 
-    // Krok 2: Połącz się z bazą danych Cosmos DB
-    const connectionString = process.env.COSMOS_DB_CONNECTION_STRING;
-    if (!connectionString) {
-        context.res = { status: 500, body: "Brak skonfigurowanego klucza do bazy danych."};
-        return;
-    }
-    const client = new CosmosClient(connectionString);
-    const database = client.database("ServiceDeskDB");
-    const container = database.container("Tickets");
+    // --- Paginacja ---
+    const page = parseInt(req.query.page) || 1;
+    const pageSize = 10;
+    const offset = (page - 1) * pageSize;
 
     let querySpec;
+    let countQuerySpec;
 
-    // Krok 3: Zbuduj zapytanie do bazy w zależności od roli użytkownika
-    if (userRoles.includes('sd')) {
-        // Użytkownik z rolą 'sd' widzi wszystkie zgłoszenia, posortowane od najnowszych
-        context.log('Użytkownik SD - pobieranie wszystkich zgłoszeń.');
+    if (isServiceDesk) {
+        // Pracownik SD widzi wszystkie zgłoszenia
         querySpec = {
-            query: "SELECT * FROM c ORDER BY c.dates.createdAt DESC"
-        };
-    } else {
-        // Zwykły użytkownik widzi tylko swoje zgłoszenia
-        context.log(`Użytkownik ${userEmail} - pobieranie własnych zgłoszeń.`);
-        querySpec = {
-            query: "SELECT * FROM c WHERE c.reportingUser.email = @userEmail ORDER BY c.dates.createdAt DESC",
+            query: "SELECT * FROM c ORDER BY c.dates.createdAt DESC OFFSET @offset LIMIT @limit",
             parameters: [
-                { name: "@userEmail", value: userEmail }
+                { name: "@offset", value: offset },
+                { name: "@limit", value: pageSize }
             ]
+        };
+        countQuerySpec = { query: "SELECT VALUE COUNT(1) FROM c" };
+    } else {
+        // Użytkownik widzi tylko swoje zgłoszenia
+        querySpec = {
+            query: "SELECT * FROM c WHERE c.reportingUser.email = @userEmail ORDER BY c.dates.createdAt DESC OFFSET @offset LIMIT @limit",
+            parameters: [
+                { name: "@userEmail", value: userEmail },
+                { name: "@offset", value: offset },
+                { name: "@limit", value: pageSize }
+            ]
+        };
+        countQuerySpec = {
+            query: "SELECT VALUE COUNT(1) FROM c WHERE c.reportingUser.email = @userEmail",
+            parameters: [{ name: "@userEmail", value: userEmail }]
         };
     }
 
-    // Krok 4: Wykonaj zapytanie i zwróć wyniki
     try {
+        const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
+        const database = client.database("ServiceDeskDB");
+        const container = database.container("Tickets");
+
+        // Pobranie całkowitej liczby zgłoszeń do paginacji
+        const { resources: countResult } = await container.items.query(countQuerySpec).fetchAll();
+        const totalCount = countResult[0];
+
+        // Pobranie zgłoszeń dla danej strony
         const { resources: items } = await container.items.query(querySpec).fetchAll();
+
         context.res = {
-            // status: 200, /* domyślnie */
-            body: items
+            body: {
+                tickets: items,
+                totalCount: totalCount,
+                currentPage: page,
+                totalPages: Math.ceil(totalCount / pageSize)
+            }
         };
-    } catch (err) {
-        context.log.error("Błąd podczas pobierania danych z Cosmos DB:", err);
+
+    } catch (error) {
+        context.log.error(error);
         context.res = {
             status: 500,
-            body: "Wystąpił błąd podczas komunikacji z bazą danych."
+            body: "Error connecting to or reading from the database"
         };
     }
 };
