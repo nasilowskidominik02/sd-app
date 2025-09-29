@@ -1,11 +1,15 @@
 Kategorie zgłoszeń i ich SLA (w godzinach):
-"Instalacja oprogramowania": 4,
+    Od poniedziałku do piątku   
+    W godzinach od 08:00 do 16:00
+    
+        "Instalacja oprogramowania": 4,
         "Konfiguracja oprogramowania": 4,
         "Hardware": 24,
         "Infrastruktura": 12,
         "Konto": 4,
         "Aplikacje": 48,
         "Inne": 8 // Domyślne SLA dla nowo utworzonych zgłoszeń
+    
 
 Domyślne przypisana dla grupy wg Kategorii:
     "Konfiguracja oprogramowania": Pierwsza linia wsparcia
