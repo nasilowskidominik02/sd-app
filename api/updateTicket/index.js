@@ -34,7 +34,7 @@ module.exports = async function (context, req) {
         const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
         const container = client.database("ServiceDeskDB").container("Tickets");
 
-        // POPRAWKA: Używamy zapytania, aby niezawodnie znaleźć zgłoszenie po jego ID
+        // Używamy zapytania, aby niezawodnie znaleźć zgłoszenie po jego ID
         const querySpec = {
             query: "SELECT * FROM c WHERE c.id = @ticketId",
             parameters: [{ name: "@ticketId", value: ticketId }]
@@ -46,12 +46,28 @@ module.exports = async function (context, req) {
         }
         let ticket = items[0];
 
+        // Zawsze inicjuj tablicę komentarzy, jeśli nie istnieje
+        if (!ticket.comments) {
+            ticket.comments = [];
+        }
+
         // Zastosuj zmiany na pobranym dokumencie
         if (changes.status) {
             ticket.status = changes.status;
+            // Jeśli ustawiamy status na "Zamknięte", dodaj datę zamknięcia.
             if (changes.status === 'Zamknięte' && !ticket.dates.closedAt) {
                 ticket.dates.closedAt = new Date().toISOString();
+                 // Dodaj komentarz zamknięcia, jeśli jest dostępny
+                if (changes.newComment && changes.newComment.text.includes("Zgłoszenie zamknięte")) {
+                    ticket.comments.push({
+                        author: clientPrincipal.userDetails,
+                        text: changes.newComment.text,
+                        timestamp: new Date().toISOString()
+                    });
+                }
             } 
+            // Jeśli ustawiamy status na inny niż "Zamknięte" (np. "Otwarte"),
+            // upewnij się, że data zamknięcia jest pusta (null).
             else if (changes.status !== 'Zamknięte') {
                 ticket.dates.closedAt = null;
             }
@@ -61,10 +77,18 @@ module.exports = async function (context, req) {
         }
         if (changes.category) {
             ticket.category = changes.category;
+            // Automatyczna zmiana grupy na podstawie nowej kategorii
             ticket.assignedTo.group = categoryToGroupMap[changes.category] || "Pierwsza linia wsparcia";
         }
+        // Dodaj nowy, standardowy komentarz
+        if (changes.newComment && !changes.newComment.text.includes("Zgłoszenie zamknięte")) {
+             ticket.comments.push({
+                author: clientPrincipal.userDetails,
+                text: changes.newComment.text,
+                timestamp: new Date().toISOString()
+            });
+        }
 
-        // Zapisz zaktualizowany dokument z powrotem do bazy
         const { resource: updatedItem } = await container.items.upsert(ticket);
 
         context.res = { body: updatedItem };
