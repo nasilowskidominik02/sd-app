@@ -2,76 +2,57 @@ const { CosmosClient } = require("@azure/cosmos");
 const { v4: uuidv4 } = require('uuid');
 
 /**
- * Oblicza gwarantowaną datę rozwiązania (SLA) na podstawie daty startowej i kategorii.
- * Uwzględnia tylko godziny robocze (pon-pt 8:00-16:00).
- * @param {string} startDateStr - Data startowa w formacie ISO.
- * @param {string} category - Kategoria zgłoszenia.
- * @returns {Date} - Obliczona data rozwiązania.
+ * Oblicza gwarantowaną datę rozwiązania (SLA).
+ * Uwzględnia tylko minuty robocze (pon-pt 8:00-16:00).
  */
-function calculateSLA(startDateStr, category) {
-    const slaHoursMap = {
+function calculateSLA(startDate, category) {
+    const slaHours = {
         "Instalacja oprogramowania": 4,
         "Konfiguracja oprogramowania": 4,
         "Hardware": 24,
         "Infrastruktura": 12,
         "Konto": 4,
         "Aplikacje": 48,
-        "Inne": 8
+        "Inne": 8 // Domyślne SLA dla nowo utworzonych zgłoszeń
     };
 
-    const businessHoursStart = 8;
-    const businessHoursEnd = 16;
-
-    let slaMinutesToAdd = (slaHoursMap[category] || 8) * 60;
-    let resolutionDate = new Date(startDateStr);
-
-    // Funkcja pomocnicza do przesuwania daty na początek następnego dnia roboczego
-    const adjustToNextBusinessDay = () => {
-        resolutionDate.setDate(resolutionDate.getDate() + 1);
-        // Pomiń weekendy
-        if (resolutionDate.getDay() === 6) { // Sobota
-            resolutionDate.setDate(resolutionDate.getDate() + 2);
-        } else if (resolutionDate.getDay() === 0) { // Niedziela
-            resolutionDate.setDate(resolutionDate.getDate() + 1);
-        }
-        resolutionDate.setHours(businessHoursStart, 0, 0, 0);
-    };
-
-    // Krok 1: Normalizacja daty startowej do godzin roboczych
-    // Jeśli zgłoszenie przyszło w weekend, przesuń na poniedziałek 8:00
-    if (resolutionDate.getDay() === 6 || resolutionDate.getDay() === 0) {
-        adjustToNextBusinessDay();
-    }
-    // Jeśli po godzinach pracy, przesuń na następny dzień roboczy o 8:00
-    else if (resolutionDate.getHours() >= businessHoursEnd) {
-        adjustToNextBusinessDay();
-    }
-    // Jeśli przed godzinami pracy, ustaw na 8:00 tego samego dnia
-    else if (resolutionDate.getHours() < businessHoursStart) {
-        resolutionDate.setHours(businessHoursStart, 0, 0, 0);
-    }
+    let minutesToAdd = (slaHours[category] || 8) * 60;
+    let currentDate = new Date(startDate);
     
-    // Krok 2: Dodaj minuty SLA, uwzględniając tylko czas roboczy
-    while (slaMinutesToAdd > 0) {
-        const endOfBusinessDay = new Date(resolutionDate);
-        endOfBusinessDay.setHours(businessHoursEnd, 0, 0, 0);
-        
-        const minutesLeftInDay = (endOfBusinessDay.getTime() - resolutionDate.getTime()) / 60000;
-
-        if (slaMinutesToAdd <= minutesLeftInDay) {
-            // Możemy rozwiązać zgłoszenie tego samego dnia
-            resolutionDate.setMinutes(resolutionDate.getMinutes() + slaMinutesToAdd);
-            slaMinutesToAdd = 0;
-        } else {
-            // Musimy przenieść pozostały czas na następny dzień roboczy
-            slaMinutesToAdd -= minutesLeftInDay;
-            adjustToNextBusinessDay();
-        }
+    // Ustawienie początkowej daty na początek dnia roboczego, jeśli jest poza godzinami
+    const day = currentDate.getDay();
+    const hour = currentDate.getHours();
+    if (day === 6) { // Sobota
+        currentDate.setDate(currentDate.getDate() + 2);
+        currentDate.setHours(8, 0, 0, 0);
+    } else if (day === 0) { // Niedziela
+        currentDate.setDate(currentDate.getDate() + 1);
+        currentDate.setHours(8, 0, 0, 0);
+    } else if (hour < 8) {
+        currentDate.setHours(8, 0, 0, 0);
+    } else if (hour >= 16) {
+        currentDate.setDate(currentDate.getDate() + (day === 5 ? 3 : 1)); // Jeśli piątek, przeskocz na poniedziałek
+        currentDate.setHours(8, 0, 0, 0);
     }
 
-    return resolutionDate;
-}
+    while (minutesToAdd > 0) {
+        const endOfWorkingDay = new Date(currentDate);
+        endOfWorkingDay.setHours(16, 0, 0, 0);
 
+        const minutesLeftInDay = (endOfWorkingDay - currentDate) / 60000;
+
+        if (minutesToAdd <= minutesLeftInDay) {
+            currentDate.setMinutes(currentDate.getMinutes() + minutesToAdd);
+            minutesToAdd = 0;
+        } else {
+            minutesToAdd -= minutesLeftInDay;
+            // Przeskocz do następnego dnia roboczego
+            currentDate.setDate(currentDate.getDate() + (currentDate.getDay() === 5 ? 3 : 1));
+            currentDate.setHours(8, 0, 0, 0);
+        }
+    }
+    return currentDate;
+}
 
 module.exports = async function (context, req) {
     context.log('JavaScript HTTP trigger function processed a request to create a ticket.');
@@ -93,12 +74,11 @@ module.exports = async function (context, req) {
     }
 
     const now = new Date();
-    const defaultCategory = "Inne";
     const newTicket = {
-        id: uuidv4(), 
+        id: uuidv4(), // Generuje unikalny, niezmienny identyfikator
         title: title,
-        category: defaultCategory,
-        status: "Nieprzeczytane",
+        category: "Inne", // Domyślna kategoria
+        status: "Nieprzeczytane", // Domyślny status
         content: content,
         reportingUser: {
             email: clientPrincipal.userDetails,
@@ -111,9 +91,10 @@ module.exports = async function (context, req) {
         dates: {
             createdAt: now.toISOString(),
             closedAt: null,
-            guaranteedResolutionAt: calculateSLA(now, defaultCategory).toISOString()
+            guaranteedResolutionAt: calculateSLA(now, "Inne").toISOString()
         },
-        attachments: attachment ? [attachment] : []
+        attachments: attachment ? [attachment] : [],
+        comments: [] // Dodajemy pustą tablicę na komentarze
     };
 
     try {

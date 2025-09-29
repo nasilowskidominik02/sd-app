@@ -84,32 +84,11 @@
             <div id="modal-body" class="modal-body">
                 <!-- Lewy panel z akcjami (dla SD) -->
                 <div id="modal-actions-panel" class="modal-actions-panel hidden">
-                    <h4>Akcje</h4>
-                    <button class="btn-action" data-action="close-ticket">Zamknij zgłoszenie</button>
-                    <button class="btn-action" data-action="open-ticket">Ustaw jako otwarte</button>
-                    <button class="btn-action" data-action="assign-tome">Przypisz do mnie</button>
-                    <div class="form-group">
-                        <label for="category-select">Zmień kategorię</label>
-                        <select id="category-select" class="form-control">
-                            <option value="Inne">Inne</option>
-                            <option value="Instalacja oprogramowania">Instalacja oprogramowania</option>
-                            <option value="Konfiguracja oprogramowania">Konfiguracja oprogramowania</option>
-                            <option value="Hardware">Hardware</option>
-                            <option value="Infrastruktura">Infrastruktura</option>
-                            <option value="Konto">Konto</option>
-                            <option value="Aplikacje">Aplikacje</option>
-                        </select>
-                    </div>
+                    <!-- ... -->
                 </div>
                 <!-- Prawy panel z treścią zgłoszenia -->
                 <div class="modal-details-panel">
-                    <div id="modal-meta-info" class="modal-meta-info">
-                        <!-- Informacje o zgłoszeniu będą wstrzykiwane tutaj -->
-                    </div>
-                    <h4>Treść zgłoszenia:</h4>
-                    <p id="modal-content-text"></p>
-                    <h4>Załączniki:</h4>
-                    <div id="modal-attachments"></div>
+                   <!-- ... -->
                 </div>
             </div>
             <p id="modal-status" class="modal-status hidden"></p>
@@ -204,14 +183,13 @@
 
             } catch(error) {
                 console.error(error);
-                modalBody.innerText = 'Wystąpił błąd podczas ładowania danych.';
+                modalBody.innerHTML = '<p>Wystąpił błąd podczas ładowania danych.</p>';
             }
         }
 
         function populateModal(ticket) {
             document.getElementById('modal-title').innerText = `Zgłoszenie: ${ticket.id.substring(0, 8)}`;
             
-            // Przywracamy oryginalną strukturę HTML dla modal-body
             document.getElementById('modal-body').innerHTML = `
                 <div id="modal-actions-panel" class="modal-actions-panel">
                     <h4>Akcje</h4>
@@ -237,10 +215,16 @@
                     <p id="modal-content-text"></p>
                     <h4>Załączniki:</h4>
                     <div id="modal-attachments"></div>
+                    <hr class="comment-separator">
+                    <h4>Komentarze</h4>
+                    <div id="comment-history" class="comment-history"></div>
+                    <form id="add-comment-form" class="add-comment-form">
+                        <textarea id="new-comment-text" placeholder="Dodaj komentarz..." required></textarea>
+                        <button type="submit" class="btn btn-secondary">Dodaj komentarz</button>
+                    </form>
                 </div>
             `;
             
-            // Wypełniamy danymi
             document.getElementById('modal-content-text').innerText = ticket.content;
             
             const metaInfo = `
@@ -268,12 +252,32 @@
                 attachmentsContainer.innerText = 'Brak załączników.';
             }
 
+            const commentHistory = document.getElementById('comment-history');
+            commentHistory.innerHTML = '';
+            if (ticket.comments && ticket.comments.length > 0) {
+                ticket.comments.forEach(comment => {
+                    const commentDiv = document.createElement('div');
+                    commentDiv.className = 'comment';
+                    commentDiv.innerHTML = `
+                        <div class="comment-header">
+                            <strong>${escapeHTML(comment.author)}</strong>
+                            <span>${new Date(comment.timestamp).toLocaleString('pl-PL')}</span>
+                        </div>
+                        <p>${escapeHTML(comment.text)}</p>
+                    `;
+                    commentHistory.appendChild(commentDiv);
+                });
+            } else {
+                commentHistory.innerText = 'Brak komentarzy.';
+            }
+
+
             const isServiceDesk = currentUserDetails.userRoles.includes('sd');
             document.getElementById('modal-actions-panel').classList.toggle('hidden', !isServiceDesk);
+            document.getElementById('add-comment-form').classList.toggle('hidden', !isServiceDesk);
             document.getElementById('modal-save-btn').classList.toggle('hidden', !isServiceDesk);
             document.getElementById('category-select').value = ticket.category;
             
-            // Ponownie podpinamy eventy, bo odtworzyliśmy strukturę HTML
             addModalEventListeners();
         }
 
@@ -286,7 +290,7 @@
 
         async function saveChanges() {
             if (Object.keys(pendingChanges).length === 0) {
-                return; // Nie ma nic do zapisania
+                return;
             }
             
             const statusEl = document.getElementById('modal-status');
@@ -305,17 +309,15 @@
                 if (!response.ok) throw new Error('Błąd podczas zapisywania zmian.');
                 
                 const updatedTicket = await response.json();
-                currentTicketData = updatedTicket; // Aktualizujemy globalny stan
-                pendingChanges = {}; // Resetujemy oczekujące zmiany
+                currentTicketData = updatedTicket; 
+                pendingChanges = {};
 
                 statusEl.textContent = 'Zmiany zapisane pomyślnie!';
                 statusEl.classList.add('success');
                 
-                // Odświeżamy widok modala i tabelę w tle
                 populateModal(currentTicketData); 
                 loadTickets(); 
                 
-                // Ukrywamy komunikat po 2 sekundach
                 setTimeout(() => {
                     statusEl.classList.add('hidden');
                 }, 2000);
@@ -330,18 +332,39 @@
             document.querySelectorAll('.btn-action').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     const action = e.target.dataset.action;
-                    if(action === 'close-ticket') pendingChanges.status = 'Zamknięte';
+                    if(action === 'close-ticket') {
+                        const reason = prompt("Wprowadź komentarz zamknięcia zgłoszenia:");
+                        if (reason && reason.trim() !== '') {
+                            pendingChanges.status = 'Zamknięte';
+                            pendingChanges.newComment = { text: `Zgłoszenie zamknięte. Powód: ${reason}` };
+                            document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
+                            document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
+                        } else {
+                            alert("Komentarz zamknięcia jest wymagany.");
+                        }
+                    }
                     if(action === 'open-ticket') pendingChanges.status = 'Otwarte';
                     if(action === 'assign-tome') pendingChanges.assignedTo = { person: currentUserDetails.userDetails };
                     
-                    document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
-                    document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
+                    if (action !== 'close-ticket') {
+                        document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
+                        document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
+                    }
                 });
             });
             document.getElementById('category-select').addEventListener('change', (e) => {
                 pendingChanges.category = e.target.value;
                 document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
                 document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
+            });
+            document.getElementById('add-comment-form').addEventListener('submit', (e) => {
+                e.preventDefault();
+                const commentText = document.getElementById('new-comment-text').value;
+                if (commentText && commentText.trim() !== '') {
+                    pendingChanges.newComment = { text: commentText };
+                    saveChanges();
+                    document.getElementById('new-comment-text').value = '';
+                }
             });
         }
 
@@ -367,7 +390,6 @@
 
                 loadTickets();
 
-                // Podpięcie eventów do stałych elementów modala
                 document.getElementById('modal-close-btn').addEventListener('click', closeModal);
                 document.getElementById('modal-save-btn').addEventListener('click', saveChanges);
 
