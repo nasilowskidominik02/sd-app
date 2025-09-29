@@ -34,19 +34,26 @@ module.exports = async function (context, req) {
         const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
         const container = client.database("ServiceDeskDB").container("Tickets");
 
-        const { resource: ticket } = await container.item(ticketId, ticketId).read();
+        // Pobranie dokumentu jest konieczne, aby go zmodyfikować
+        const { resource: ticket } = await container.item(ticketId, undefined).read();
         if (!ticket) {
             return { status: 404, body: "Ticket not found." };
         }
 
-        // Zastosuj zmiany
+        // Zastosuj zmiany na pobranym dokumencie
         if (changes.status) {
             ticket.status = changes.status;
-            if (changes.status === 'Zamknięte') {
+            // Jeśli ustawiamy status na "Zamknięte", dodaj datę zamknięcia.
+            if (changes.status === 'Zamknięte' && !ticket.dates.closedAt) {
                 ticket.dates.closedAt = new Date().toISOString();
+            } 
+            // Jeśli ustawiamy status na inny niż "Zamknięte" (np. "Otwarte"),
+            // upewnij się, że data zamknięcia jest pusta (null).
+            else if (changes.status !== 'Zamknięte') {
+                ticket.dates.closedAt = null;
             }
         }
-        if (changes.assignedTo) {
+        if (changes.assignedTo && changes.assignedTo.person) {
             ticket.assignedTo.person = changes.assignedTo.person;
         }
         if (changes.category) {
@@ -55,7 +62,7 @@ module.exports = async function (context, req) {
             ticket.assignedTo.group = categoryToGroupMap[changes.category] || "Pierwsza linia wsparcia";
         }
 
-        const { resource: updatedItem } = await container.item(ticketId, ticketId).replace(ticket);
+        const { resource: updatedItem } = await container.items.upsert(ticket);
 
         context.res = { body: updatedItem };
 
@@ -64,3 +71,4 @@ module.exports = async function (context, req) {
         context.res = { status: 500, body: "Error updating the ticket." };
     }
 };
+
