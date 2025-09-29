@@ -20,7 +20,6 @@ module.exports = async function (context, req) {
     const decoded = encoded.toString('ascii');
     const clientPrincipal = JSON.parse(decoded);
 
-    // Tylko pracownicy Service Desk mogą modyfikować zgłoszenia
     if (!clientPrincipal.userRoles.includes('sd')) {
         return { status: 403, body: "You are not authorized to perform this action." };
     }
@@ -34,7 +33,6 @@ module.exports = async function (context, req) {
         const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
         const container = client.database("ServiceDeskDB").container("Tickets");
 
-        // Używamy zapytania, aby niezawodnie znaleźć zgłoszenie po jego ID
         const querySpec = {
             query: "SELECT * FROM c WHERE c.id = @ticketId",
             parameters: [{ name: "@ticketId", value: ticketId }]
@@ -45,43 +43,38 @@ module.exports = async function (context, req) {
             return { status: 404, body: "Ticket not found." };
         }
         let ticket = items[0];
+        const originalCategory = ticket.category; // Zapisujemy oryginalną kategorię (klucz partycji)
 
-        // Zawsze inicjuj tablicę komentarzy, jeśli nie istnieje
         if (!ticket.comments) {
             ticket.comments = [];
         }
 
-        // Zastosuj zmiany na pobranym dokumencie
+        // Zastosuj zmiany
+        let categoryChanged = false;
         if (changes.status) {
             ticket.status = changes.status;
-            // Jeśli ustawiamy status na "Zamknięte", dodaj datę zamknięcia.
             if (changes.status === 'Zamknięte' && !ticket.dates.closedAt) {
                 ticket.dates.closedAt = new Date().toISOString();
-                 // Dodaj komentarz zamknięcia, jeśli jest dostępny
-                if (changes.newComment && changes.newComment.text.includes("Zgłoszenie zamknięte")) {
+                if (changes.newComment && changes.newComment.text) {
                     ticket.comments.push({
                         author: clientPrincipal.userDetails,
                         text: changes.newComment.text,
                         timestamp: new Date().toISOString()
                     });
                 }
-            } 
-            // Jeśli ustawiamy status na inny niż "Zamknięte" (np. "Otwarte"),
-            // upewnij się, że data zamknięcia jest pusta (null).
-            else if (changes.status !== 'Zamknięte') {
+            } else if (changes.status !== 'Zamknięte') {
                 ticket.dates.closedAt = null;
             }
         }
         if (changes.assignedTo && changes.assignedTo.person) {
             ticket.assignedTo.person = changes.assignedTo.person;
         }
-        if (changes.category) {
+        if (changes.category && changes.category !== originalCategory) {
             ticket.category = changes.category;
-            // Automatyczna zmiana grupy na podstawie nowej kategorii
             ticket.assignedTo.group = categoryToGroupMap[changes.category] || "Pierwsza linia wsparcia";
+            categoryChanged = true;
         }
-        // Dodaj nowy, standardowy komentarz
-        if (changes.newComment && !changes.newComment.text.includes("Zgłoszenie zamknięte")) {
+        if (changes.newComment && changes.newComment.text && changes.status !== 'Zamknięte') {
              ticket.comments.push({
                 author: clientPrincipal.userDetails,
                 text: changes.newComment.text,
@@ -89,7 +82,19 @@ module.exports = async function (context, req) {
             });
         }
 
-        const { resource: updatedItem } = await container.items.upsert(ticket);
+        let updatedItem;
+
+        if (categoryChanged) {
+            // Jeśli klucz partycji (kategoria) się zmienił, musimy usunąć stary dokument i stworzyć nowy.
+            // To nie jest operacja transakcyjna, ale dla tej aplikacji jest wystarczająco dobra.
+            await container.items.create(ticket);
+            await container.item(ticket.id, originalCategory).delete();
+            updatedItem = ticket;
+        } else {
+            // Jeśli kategoria się nie zmieniła, po prostu aktualizujemy istniejący dokument.
+            const { resource } = await container.items.upsert(ticket);
+            updatedItem = resource;
+        }
 
         context.res = { body: updatedItem };
 
