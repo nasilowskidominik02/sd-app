@@ -34,21 +34,24 @@ module.exports = async function (context, req) {
         const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
         const container = client.database("ServiceDeskDB").container("Tickets");
 
-        // Pobranie dokumentu jest konieczne, aby go zmodyfikować
-        const { resource: ticket } = await container.item(ticketId, undefined).read();
-        if (!ticket) {
+        // POPRAWKA: Używamy zapytania, aby niezawodnie znaleźć zgłoszenie po jego ID
+        const querySpec = {
+            query: "SELECT * FROM c WHERE c.id = @ticketId",
+            parameters: [{ name: "@ticketId", value: ticketId }]
+        };
+        const { resources: items } = await container.items.query(querySpec).fetchAll();
+
+        if (items.length === 0) {
             return { status: 404, body: "Ticket not found." };
         }
+        let ticket = items[0];
 
         // Zastosuj zmiany na pobranym dokumencie
         if (changes.status) {
             ticket.status = changes.status;
-            // Jeśli ustawiamy status na "Zamknięte", dodaj datę zamknięcia.
             if (changes.status === 'Zamknięte' && !ticket.dates.closedAt) {
                 ticket.dates.closedAt = new Date().toISOString();
             } 
-            // Jeśli ustawiamy status na inny niż "Zamknięte" (np. "Otwarte"),
-            // upewnij się, że data zamknięcia jest pusta (null).
             else if (changes.status !== 'Zamknięte') {
                 ticket.dates.closedAt = null;
             }
@@ -58,16 +61,16 @@ module.exports = async function (context, req) {
         }
         if (changes.category) {
             ticket.category = changes.category;
-            // Automatyczna zmiana grupy na podstawie nowej kategorii
             ticket.assignedTo.group = categoryToGroupMap[changes.category] || "Pierwsza linia wsparcia";
         }
 
+        // Zapisz zaktualizowany dokument z powrotem do bazy
         const { resource: updatedItem } = await container.items.upsert(ticket);
 
         context.res = { body: updatedItem };
 
     } catch (error) {
-        context.log.error(error);
+        context.log.error("Error in updateTicket:", error);
         context.res = { status: 500, body: "Error updating the ticket." };
     }
 };
