@@ -158,6 +158,9 @@ a:hover {
     border-radius: var(--border-radius);
     box-shadow: var(--shadow);
     text-align: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .login-instruction {
