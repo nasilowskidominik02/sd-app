@@ -7,4 +7,15 @@ Kategorie zgłoszeń i ich SLA (w godzinach):
         "Aplikacje": 48,
         "Inne": 8 // Domyślne SLA dla nowo utworzonych zgłoszeń
 
+Domyślne przypisana dla grupy wg Kategorii:
+    "Konfiguracja oprogramowania": Pierwsza linia wsparcia
+        "Hardware": Pierwsza linia wsparcia
+        "Infrastruktura": Administratorzy infrastruktury
+        "Konto": Pierwsza linia wsparcia
+        "Aplikacje": Administratorzy aplikacji
+        "Inne": Pierwsza linia wsparcia
+
+Typy kont użytkowników:
+    user
+    sd
 
