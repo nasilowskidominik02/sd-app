@@ -5,7 +5,7 @@
     --light-gray-bg: #f4f6f8; /* Very light gray for backgrounds */
     --medium-gray-bg: #e9ecef; /* Slightly darker gray */
     --gray-border: #dee2e6; /* Border gray */
-    --text-dark: #1f2j7;
+    --text-dark: #1f2937;
     --text-light: #6b7280;
     --white: #ffffff;
     --danger-red: #ef4444;
@@ -236,7 +236,8 @@ a:hover {
 }
 
 .status-badge.status-nieprzeczytane { background-color: var(--status-nieprzeczytane); }
-.status-badge.status-otwarte { background-color: var(--status-open); }
+/* POPRAWKA PONIŻEJ */
+.status-badge.status-otwarte { background-color: var(--status-otwarte); }
 .status-badge.status-zamknięte { background-color: var(--status-zamknięte); }
 
 /* --- Pagination --- */
@@ -476,3 +477,4 @@ textarea.form-control {
     color: #721c24;
     background-color: #f8d7da;
 }
+
