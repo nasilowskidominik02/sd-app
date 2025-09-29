@@ -12,6 +12,7 @@
 <body>
 
     <div class="app-layout">
+        <!-- Górny baner na całą szerokość -->
         <header class="app-header">
             <div class="header-title">
                 Aplikacja do zgłaszania problemów do Service Desk
@@ -22,7 +23,9 @@
             </div>
         </header>
 
+        <!-- Główna część aplikacji (pasek boczny + treść) -->
         <div class="app-body">
+            <!-- Pasek boczny z nawigacją -->
             <aside class="sidebar">
                 <nav class="sidebar-nav">
                     <a href="dashboard.html" class="nav-item active">Zgłoszenia</a>
@@ -30,10 +33,11 @@
                     <a href="#" id="admin-link" class="nav-item hidden">Panel Administracyjny</a> 
                 </nav>
             </aside>
-
+            
+            <!-- Główna zawartość strony -->
             <main class="main-content">
                 <h1 id="dashboard-title">Twoje ostatnie zgłoszenia</h1>
-
+                
                 <div class="table-container">
                     <table class="ticket-table">
                         <thead>
@@ -51,19 +55,23 @@
                             </tr>
                         </thead>
                         <tbody id="tickets-tbody">
-                            </tbody>
+                            <!-- Wiersze z danymi będą dynamicznie ładowane tutaj -->
+                        </tbody>
                     </table>
                 </div>
                 <div id="pagination-container" class="pagination">
-                    </div>
+                    <!-- Przyciski paginacji będą dynamicznie ładowane tutaj -->
+                </div>
             </main>
         </div>
 
+        <!-- Stopka Aplikacji -->
         <footer class="app-footer">
             <p>Dominik Nasiłowski 2026 (R)</p>
         </footer>
     </div>
 
+    <!-- Modal do wyświetlania i edycji zgłoszenia -->
     <div id="ticket-modal" class="modal-overlay hidden">
         <div class="modal-content">
             <header class="modal-header">
@@ -74,6 +82,7 @@
                 </div>
             </header>
             <div id="modal-body" class="modal-body">
+                <!-- Lewy panel z akcjami (dla SD) -->
                 <div id="modal-actions-panel" class="modal-actions-panel hidden">
                     <h4>Akcje</h4>
                     <button class="btn-action" data-action="close-ticket">Zamknij zgłoszenie</button>
@@ -92,9 +101,11 @@
                         </select>
                     </div>
                 </div>
+                <!-- Prawy panel z treścią zgłoszenia -->
                 <div class="modal-details-panel">
                     <div id="modal-meta-info" class="modal-meta-info">
-                        </div>
+                        <!-- Informacje o zgłoszeniu będą wstrzykiwane tutaj -->
+                    </div>
                     <h4>Treść zgłoszenia:</h4>
                     <p id="modal-content-text"></p>
                     <h4>Załączniki:</h4>
@@ -104,7 +115,7 @@
             <p id="modal-status" class="modal-status hidden"></p>
         </div>
     </div>
-
+    
     <script>
         let currentUserDetails = null;
         let currentTicketData = null;
@@ -134,7 +145,7 @@
         async function loadTickets(page = 1) {
             const tbody = document.getElementById('tickets-tbody');
             tbody.innerHTML = '<tr><td colspan="10">Ładowanie zgłoszeń...</td></tr>';
-
+            
             try {
                 const response = await fetch(`/api/getTickets?page=${page}`);
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -151,6 +162,7 @@
                 tickets.forEach(ticket => {
                     const row = tbody.insertRow();
                     row.className = 'ticket-row';
+                    row.dataset.ticketId = ticket.id;
                     row.onclick = () => openTicketModal(ticket.id);
 
                     const statusClass = `status-${ticket.status.toLowerCase().replace(/\s/g, '-')}`;
@@ -179,28 +191,63 @@
         // --- Logika okna modalnego ---
         async function openTicketModal(ticketId) {
             const modal = document.getElementById('ticket-modal');
+            const modalBody = document.getElementById('modal-body');
+            modalBody.innerHTML = '<p>Ładowanie szczegółów...</p>';
             modal.classList.remove('hidden');
 
             try {
                 const response = await fetch(`/api/getTicket?id=${ticketId}`);
                 if (!response.ok) throw new Error('Nie udało się pobrać szczegółów zgłoszenia.');
                 currentTicketData = await response.json();
-
+                
                 populateModal(currentTicketData);
 
             } catch(error) {
                 console.error(error);
-                document.getElementById('modal-body').innerText = 'Wystąpił błąd.';
+                modalBody.innerText = 'Wystąpił błąd podczas ładowania danych.';
             }
         }
 
         function populateModal(ticket) {
             document.getElementById('modal-title').innerText = `Zgłoszenie: ${ticket.id.substring(0, 8)}`;
+            
+            // Przywracamy oryginalną strukturę HTML dla modal-body
+            document.getElementById('modal-body').innerHTML = `
+                <div id="modal-actions-panel" class="modal-actions-panel">
+                    <h4>Akcje</h4>
+                    <button class="btn-action" data-action="close-ticket">Zamknij zgłoszenie</button>
+                    <button class="btn-action" data-action="open-ticket">Ustaw jako otwarte</button>
+                    <button class="btn-action" data-action="assign-tome">Przypisz do mnie</button>
+                    <div class="form-group">
+                        <label for="category-select">Zmień kategorię</label>
+                        <select id="category-select" class="form-control">
+                            <option value="Inne">Inne</option>
+                            <option value="Instalacja oprogramowania">Instalacja oprogramowania</option>
+                            <option value="Konfiguracja oprogramowania">Konfiguracja oprogramowania</option>
+                            <option value="Hardware">Hardware</option>
+                            <option value="Infrastruktura">Infrastruktura</option>
+                            <option value="Konto">Konto</option>
+                            <option value="Aplikacje">Aplikacje</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-details-panel">
+                    <div id="modal-meta-info" class="modal-meta-info"></div>
+                    <h4>Treść zgłoszenia:</h4>
+                    <p id="modal-content-text"></p>
+                    <h4>Załączniki:</h4>
+                    <div id="modal-attachments"></div>
+                </div>
+            `;
+            
+            // Wypełniamy danymi
             document.getElementById('modal-content-text').innerText = ticket.content;
-
+            
             const metaInfo = `
                 <p><strong>Status:</strong> <span class="status-badge status-${ticket.status.toLowerCase().replace(/\s/g, '-')}">${escapeHTML(ticket.status)}</span></p>
                 <p><strong>Zgłaszający:</strong> ${escapeHTML(ticket.reportingUser.name)}</p>
+                <p><strong>Przypisany do:</strong> ${escapeHTML(ticket.assignedTo.person || '---')}</p>
+                <p><strong>Grupa:</strong> ${escapeHTML(ticket.assignedTo.group)}</p>
                 <p><strong>Utworzono:</strong> ${new Date(ticket.dates.createdAt).toLocaleString('pl-PL')}</p>
                 <p><strong>SLA:</strong> ${new Date(ticket.dates.guaranteedResolutionAt).toLocaleString('pl-PL')}</p>
             `;
@@ -221,14 +268,13 @@
                 attachmentsContainer.innerText = 'Brak załączników.';
             }
 
-            // Pokaż/ukryj panel akcji w zależności od roli
             const isServiceDesk = currentUserDetails.userRoles.includes('sd');
-            const actionsPanel = document.getElementById('modal-actions-panel');
-            const saveButton = document.getElementById('modal-save-btn');
-
-            actionsPanel.classList.toggle('hidden', !isServiceDesk);
-            saveButton.classList.toggle('hidden', !isServiceDesk);
+            document.getElementById('modal-actions-panel').classList.toggle('hidden', !isServiceDesk);
+            document.getElementById('modal-save-btn').classList.toggle('hidden', !isServiceDesk);
             document.getElementById('category-select').value = ticket.category;
+            
+            // Ponownie podpinamy eventy, bo odtworzyliśmy strukturę HTML
+            addModalEventListeners();
         }
 
         function closeModal() {
@@ -240,10 +286,9 @@
 
         async function saveChanges() {
             if (Object.keys(pendingChanges).length === 0) {
-                closeModal();
-                return;
+                return; // Nie ma nic do zapisania
             }
-
+            
             const statusEl = document.getElementById('modal-status');
             statusEl.textContent = 'Zapisywanie...';
             statusEl.classList.remove('hidden', 'success', 'error');
@@ -258,14 +303,22 @@
                     })
                 });
                 if (!response.ok) throw new Error('Błąd podczas zapisywania zmian.');
+                
+                const updatedTicket = await response.json();
+                currentTicketData = updatedTicket; // Aktualizujemy globalny stan
+                pendingChanges = {}; // Resetujemy oczekujące zmiany
 
                 statusEl.textContent = 'Zmiany zapisane pomyślnie!';
                 statusEl.classList.add('success');
-
+                
+                // Odświeżamy widok modala i tabelę w tle
+                populateModal(currentTicketData); 
+                loadTickets(); 
+                
+                // Ukrywamy komunikat po 2 sekundach
                 setTimeout(() => {
-                    closeModal();
-                    loadTickets(); // Odśwież listę zgłoszeń
-                }, 1000);
+                    statusEl.classList.add('hidden');
+                }, 2000);
 
             } catch (error) {
                  statusEl.textContent = 'Błąd: ' + error.message;
@@ -273,21 +326,40 @@
             }
         }
 
+        function addModalEventListeners() {
+            document.querySelectorAll('.btn-action').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const action = e.target.dataset.action;
+                    if(action === 'close-ticket') pendingChanges.status = 'Zamknięte';
+                    if(action === 'open-ticket') pendingChanges.status = 'Otwarte';
+                    if(action === 'assign-tome') pendingChanges.assignedTo = { person: currentUserDetails.userDetails };
+                    
+                    document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
+                    document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
+                });
+            });
+            document.getElementById('category-select').addEventListener('change', (e) => {
+                pendingChanges.category = e.target.value;
+                document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
+                document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
+            });
+        }
+
         // --- Inicjalizacja strony ---
         async function initializeDashboard() {
             try {
                 const response = await fetch('/.auth/me');
                 const data = await response.json();
-
+                
                 if (!data.clientPrincipal) {
                     window.location.href = 'index.html';
                     return;
                 }
                 currentUserDetails = data.clientPrincipal;
                 document.getElementById('userName').textContent = currentUserDetails.userDetails;
-
+                
                 const isServiceDesk = currentUserDetails.userRoles.includes('sd');
-
+                
                 if (isServiceDesk) {
                     document.getElementById('admin-link').classList.remove('hidden');
                     document.getElementById('dashboard-title').textContent = "Wszystkie ostatnie zgłoszenia";
@@ -295,26 +367,9 @@
 
                 loadTickets();
 
-                // Podpięcie eventów do modala
+                // Podpięcie eventów do stałych elementów modala
                 document.getElementById('modal-close-btn').addEventListener('click', closeModal);
                 document.getElementById('modal-save-btn').addEventListener('click', saveChanges);
-                document.querySelectorAll('.btn-action').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
-                        const action = e.target.dataset.action;
-                        if(action === 'close-ticket') pendingChanges.status = 'Zamknięte';
-                        if(action === 'open-ticket') pendingChanges.status = 'Otwarte';
-                        if(action === 'assign-tome') pendingChanges.assignedTo = { person: currentUserDetails.userDetails };
-
-                        document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
-                        document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
-                    });
-                });
-                document.getElementById('category-select').addEventListener('change', (e) => {
-                    pendingChanges.category = e.target.value;
-                    document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
-                    document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
-                });
-
 
             } catch (error) {
                 console.error('Błąd inicjalizacji panelu:', error);
@@ -327,3 +382,4 @@
 
 </body>
 </html>
+
