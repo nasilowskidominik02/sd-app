@@ -21,17 +21,16 @@
 
         <!-- Główna, wycentrowana część aplikacji -->
         <div class="app-body-centered">
-            <main class="main-content">
-                <div class="login-container">
-                    <h1>Witaj!</h1>
-                    <p class="login-instruction">
-                        Zostaniesz przekierowany na stronę logowania Microsoft. <br>
-                        Użyj danych (e-mail i hasło), które otrzymałeś od administratora. <br>
-                        W razie problemów z zalogowaniem, zadzwoń na 668 762 785 lub wyślij SMS.
-                    </p>
-                    <a href="/.auth/login/aad" class="button-login">Przejdź do logowania</a>
-                </div>
-            </main>
+            <!-- Usunięto zbędny <main class="main-content"> -->
+            <div class="login-container">
+                <h1>Witaj!</h1>
+                <p class="login-instruction">
+                    Zostaniesz przekierowany na stronę logowania Microsoft. <br>
+                    Użyj danych (e-mail i hasło), które otrzymałeś od administratora. <br>
+                    W razie problemów z zalogowaniem, zadzwoń na 668 762 785 lub wyślij SMS.
+                </p>
+                <a href="/.auth/login/aad" class="button-login">Przejdź do logowania</a>
+            </div>
         </div>
 
         <!-- Stopka Aplikacji -->
@@ -51,9 +50,6 @@
                     // Użytkownik jest zalogowany, więc automatycznie przekierowujemy go do dashboardu.
                     window.location.href = 'dashboard.html';
                 }
-                // Jeśli nie jest zalogowany (clientPrincipal jest null), nic nie robimy,
-                // użytkownik po prostu widzi stronę logowania.
-
             } catch (error) {
                 console.error('Błąd podczas sprawdzania statusu logowania:', error);
             }
