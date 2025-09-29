@@ -36,7 +36,7 @@
             
             <!-- Główna zawartość strony -->
             <main class="main-content">
-                <h1 id="dashboard-title">Zgłoszenia</h1>
+                <h1 id="dashboard-title">Twoje ostatnie zgłoszenia</h1>
                 
                 <div class="table-container">
                     <table class="ticket-table">
@@ -48,9 +48,10 @@
                                 <th>Użytkownik</th>
                                 <th>Kategoria</th>
                                 <th>Odpowiedzialny</th>
-                                <th>Grupa odpowiedzialna</th>
+                                <th>Grupa</th>
                                 <th>Utworzono</th>
                                 <th>SLA</th>
+                                <th>Zamknięto</th>
                             </tr>
                         </thead>
                         <tbody id="tickets-tbody">
@@ -102,7 +103,7 @@
 
         async function loadTickets(page = 1) {
             const ticketsTbody = document.getElementById('tickets-tbody');
-            ticketsTbody.innerHTML = '<tr><td colspan="9">Ładowanie zgłoszeń...</td></tr>';
+            ticketsTbody.innerHTML = '<tr><td colspan="10">Ładowanie zgłoszeń...</td></tr>';
             
             try {
                 const response = await fetch(`/api/getTickets?page=${page}`);
@@ -115,7 +116,7 @@
                 ticketsTbody.innerHTML = ''; // Wyczyść komunikat "ładowanie"
 
                 if (tickets.length === 0) {
-                    ticketsTbody.innerHTML = '<tr><td colspan="9">Brak zgłoszeń do wyświetlenia.</td></tr>';
+                    ticketsTbody.innerHTML = '<tr><td colspan="10">Brak zgłoszeń do wyświetlenia.</td></tr>';
                     renderPagination(0, 0); // Wyczyść paginację
                     return;
                 }
@@ -124,9 +125,12 @@
                     const row = ticketsTbody.insertRow();
                     const statusClass = `status-${ticket.status.toLowerCase().replace(' ', '-')}`;
                     
-                    // Skrócenie ID do 8 znaków dla lepszej czytelności w tabeli
                     const shortId = ticket.id.substring(0, 8);
                     const assignedPerson = ticket.assignedTo.person || '---';
+                    const guaranteedDate = ticket.dates.guaranteedResolutionAt ? new Date(ticket.dates.guaranteedResolutionAt).toLocaleString('pl-PL') : '---';
+                    const closedDate = ticket.status === 'Zamknięte' && ticket.dates.closedAt 
+                        ? new Date(ticket.dates.closedAt).toLocaleString('pl-PL') 
+                        : '---';
 
                     row.innerHTML = `
                         <td>${escapeHTML(shortId)}</td>
@@ -137,7 +141,8 @@
                         <td>${escapeHTML(assignedPerson)}</td>
                         <td>${escapeHTML(ticket.assignedTo.group)}</td>
                         <td>${new Date(ticket.dates.createdAt).toLocaleString('pl-PL')}</td>
-                        <td>${new Date(ticket.dates.guaranteedResolutionAt).toLocaleString('pl-PL')}</td>
+                        <td>${guaranteedDate}</td>
+                        <td>${closedDate}</td>
                     `;
                 });
 
@@ -145,7 +150,7 @@
 
             } catch (error) {
                 console.error('Błąd podczas pobierania zgłoszeń:', error);
-                ticketsTbody.innerHTML = '<tr><td colspan="9" class="error-message">Wystąpił błąd podczas ładowania zgłoszeń.</td></tr>';
+                ticketsTbody.innerHTML = '<tr><td colspan="10" class="error-message">Wystąpił błąd podczas ładowania zgłoszeń.</td></tr>';
             }
         }
 

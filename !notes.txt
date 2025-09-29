@@ -19,3 +19,9 @@ Typy kont użytkowników:
     user
     sd
 
+Statusy zgłoszeń:
+    Nieprzeczytane
+    Otwarte
+    Zamknięte
+
+
