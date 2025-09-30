@@ -135,6 +135,7 @@
         let currentUserDetails = null;
         let currentTicketData = null;
         let pendingChanges = {};
+        let currentPage = 1; // Zmienna do śledzenia bieżącej strony
 
         // --- Funkcje pomocnicze ---
         function escapeHTML(str) {
@@ -158,6 +159,7 @@
 
         // --- Ładowanie zgłoszeń do tabeli ---
         async function loadTickets(page = 1) {
+            currentPage = page; // Aktualizuj bieżącą stronę
             const tbody = document.getElementById('tickets-tbody');
             tbody.innerHTML = '<tr><td colspan="10">Ładowanie zgłoszeń...</td></tr>';
             
@@ -350,7 +352,7 @@
                 statusEl.classList.add('success');
                 
                 populateModal(currentTicketData); 
-                loadTickets(); 
+                loadTickets(currentPage); // Odśwież listę na bieżącej stronie
 
                 setTimeout(() => {
                     statusEl.classList.add('hidden');
@@ -383,6 +385,14 @@
                 }
 
                 loadTickets();
+                
+                // Ustaw interwał do automatycznego odświeżania listy zgłoszeń co minutę
+                setInterval(() => {
+                    // Odświeżaj tylko jeśli okno modalne nie jest otwarte
+                    if (document.getElementById('ticket-modal').classList.contains('hidden')) {
+                        loadTickets(currentPage);
+                    }
+                }, 60000);
 
                 // Podpięcie eventów do modala
                 document.getElementById('modal-close-btn').addEventListener('click', closeModal);
