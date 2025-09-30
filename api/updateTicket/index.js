@@ -70,9 +70,18 @@ module.exports = async function (context, req) {
             ticket.assignedTo.person = changes.assignedTo.person;
         }
         if (changes.category && changes.category !== originalCategory) {
-            ticket.category = changes.category;
-            ticket.assignedTo.group = categoryToGroupMap[changes.category] || "Pierwsza linia wsparcia";
+            const newCategory = changes.category;
+            const newGroup = categoryToGroupMap[newCategory] || "Pierwsza linia wsparcia";
+            
+            ticket.category = newCategory;
+            ticket.assignedTo.group = newGroup;
             categoryChanged = true;
+
+            // NOWA LOGIKA: Jeśli nowa grupa jest inna niż "Pierwsza linia wsparcia",
+            // czyścimy przypisanie do konkretnej osoby.
+            if (newGroup !== "Pierwsza linia wsparcia") {
+                ticket.assignedTo.person = null;
+            }
         }
         if (changes.newComment && changes.newComment.text && changes.status !== 'Zamknięte') {
              ticket.comments.push({
@@ -86,7 +95,6 @@ module.exports = async function (context, req) {
 
         if (categoryChanged) {
             // Jeśli klucz partycji (kategoria) się zmienił, musimy usunąć stary dokument i stworzyć nowy.
-            // To nie jest operacja transakcyjna, ale dla tej aplikacji jest wystarczająco dobra.
             await container.items.create(ticket);
             await container.item(ticket.id, originalCategory).delete();
             updatedItem = ticket;
