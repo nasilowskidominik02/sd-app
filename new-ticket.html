@@ -28,8 +28,8 @@
             <!-- Pasek boczny z nawigacją -->
             <aside class="sidebar">
                 <nav class="sidebar-nav">
-                    <a href="dashboard.html" class="nav-item active">Zgłoszenia</a>
-                    <a href="new-ticket.html" class="nav-item">Nowe zgłoszenie</a>
+                    <a href="dashboard.html" class="nav-item">Zgłoszenia</a>
+                    <a href="new-ticket.html" class="nav-item active">Nowe zgłoszenie</a>
                     <a href="#" id="admin-link" class="nav-item hidden">Panel Administracyjny</a> 
                 </nav>
             </aside>
@@ -41,11 +41,11 @@
                 <form id="new-ticket-form" class="form-container">
                     <div class="form-group">
                         <label for="title">Tytuł zgłoszenia</label>
-                        <input type="text" id="title" name="title" required>
+                        <input type="text" id="title" name="title" class="form-control" required>
                     </div>
                     <div class="form-group">
                         <label for="content">Treść zgłoszenia</label>
-                        <textarea id="content" name="content" rows="10" required></textarea>
+                        <textarea id="content" name="content" rows="10" class="form-control" required></textarea>
                     </div>
                      <div class="form-group">
                         <label for="attachment">Załącznik (opcjonalnie)</label>
@@ -53,7 +53,7 @@
                     </div>
                     
                     <div class="form-actions">
-                         <button type="submit" class="btn btn-primary">Wyślij zgłoszenie</button>
+                         <button type="submit" class="btn-submit">Wyślij zgłoszenie</button>
                          <p id="form-status" class="hidden"></p>
                     </div>
                 </form>
@@ -98,6 +98,7 @@
             const statusMessage = document.getElementById('form-status');
 
             submitButton.disabled = true;
+            statusMessage.textContent = 'Przetwarzanie...';
             statusMessage.classList.remove('hidden', 'success', 'error');
 
             let attachmentInfo = null;
@@ -106,7 +107,6 @@
             // Krok 1: Prześlij plik, jeśli został wybrany
             if (fileInput.files.length > 0) {
                 statusMessage.textContent = 'Przesyłanie załącznika...';
-                statusMessage.classList.remove('hidden');
                 const file = fileInput.files[0];
                 const formData = new FormData();
                 formData.append('file', file);
@@ -145,8 +145,8 @@
                 });
 
                 if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+                    const errorData = await response.text(); // Zmieniono na .text() dla lepszego debugowania
+                    throw new Error(errorData || `HTTP error! status: ${response.status}`);
                 }
 
                 statusMessage.textContent = 'Zgłoszenie zostało pomyślnie utworzone! Przekierowywanie...';
