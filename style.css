@@ -224,6 +224,7 @@ a:hover {
     background-color: #f9fafb;
 }
 
+
 .status-badge {
     display: inline-block;
     padding: 4px 12px;
@@ -294,6 +295,37 @@ textarea.form-control {
     resize: vertical;
 }
 
+.file-input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid var(--gray-border);
+    border-radius: var(--border-radius);
+    font-size: 14px;
+    font-family: 'Inter', sans-serif;
+}
+
+.file-input::file-selector-button {
+    margin-right: 12px;
+    border: none;
+    background: var(--medium-gray-bg);
+    padding: 8px 12px;
+    border-radius: var(--border-radius);
+    color: var(--text-dark);
+    cursor: pointer;
+    transition: background-color .2s ease-in-out;
+}
+
+.file-input::file-selector-button:hover {
+    background: var(--gray-border);
+}
+
+
+.form-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
 .btn-submit {
     background-color: var(--primary-blue);
     color: var(--white);
@@ -315,10 +347,16 @@ textarea.form-control {
     cursor: not-allowed;
 }
 
-.upload-feedback {
-    margin-top: 8px;
-    font-size: 14px;
-    color: var(--text-light);
+#form-status {
+    font-weight: 500;
+}
+
+#form-status.success {
+    color: var(--status-otwarte);
+}
+
+#form-status.error {
+    color: var(--danger-red);
 }
 
 /* --- Unauthorized Page --- */
@@ -427,6 +465,7 @@ textarea.form-control {
     flex-direction: column;
     gap: 16px;
     flex-shrink: 0;
+    overflow-y: auto;
 }
 
 .modal-actions-panel h4 {
@@ -476,47 +515,41 @@ textarea.form-control {
     background-color: #f8d7da;
 }
 
-/* --- Comments Section in Modal --- */
 .comments-section {
     margin-top: 32px;
 }
 
 .comment-list {
-    margin-top: 16px;
     display: flex;
     flex-direction: column;
     gap: 16px;
+    margin-bottom: 24px;
 }
 
 .comment {
     background-color: var(--light-gray-bg);
-    border: 1px solid var(--gray-border);
-    border-radius: var(--border-radius);
     padding: 16px;
+    border-radius: var(--border-radius);
+    border: 1px solid var(--gray-border);
 }
 
 .comment-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 14px;
-    color: var(--text-light);
     margin-bottom: 8px;
+    font-size: 14px;
 }
 
 .comment-author {
     font-weight: 600;
 }
 
-.comment-body {
-    white-space: pre-wrap; /* Preserve line breaks in comments */
+.comment-date {
+    color: var(--text-light);
 }
 
 .add-comment-form {
     margin-top: 24px;
-}
-
-.add-comment-form textarea {
-    min-height: 80px;
 }
 
