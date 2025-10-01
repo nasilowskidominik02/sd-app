@@ -9,38 +9,37 @@ module.exports = async function (context, req) {
     }
 
     try {
-        // Nowoczesny sposób parsowania danych formularza w Azure Functions
-        const formData = await req.formData();
-        const file = formData.get('file');
+        const { fileName, fileContent } = req.body;
 
-        if (!file) {
-            return { status: 400, body: { message: "Nie znaleziono pliku w formularzu." } };
+        if (!fileName || !fileContent) {
+            return { status: 400, body: { message: "Nieprawidłowe dane pliku." } };
         }
-        
-        // NOWA, PROSTSZA METODA: Konwersja pliku na ArrayBuffer
-        const fileBuffer = await file.arrayBuffer();
 
+        // Dekodowanie pliku z formatu Base64
+        // Usuwamy nagłówek 'data:image/png;base64,' lub podobny
+        const base64Data = fileContent.split(';base64,').pop();
+        const fileBuffer = Buffer.from(base64Data, 'base64');
+        
         const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
         if (!connectionString) {
             throw new Error("Brak skonfigurowanego klucza do Azure Storage.");
         }
 
         const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
-        const containerName = "attachments"; // Nazwa kontenera na załączniki
+        const containerName = "attachments";
         const containerClient = blobServiceClient.getContainerClient(containerName);
         await containerClient.createIfNotExists({ access: 'blob' });
 
-        const blobName = `${uuidv4()}-${file.name}`;
+        const blobName = `${uuidv4()}-${fileName}`;
         const blockBlobClient = containerClient.getBlockBlobClient(blobName);
         
-        // Przesłanie bufora (ArrayBuffer) do Blob Storage
-        await blockBlobClient.upload(fileBuffer, fileBuffer.byteLength);
+        await blockBlobClient.upload(fileBuffer, fileBuffer.length);
 
         context.res = {
             status: 200,
             body: { 
                 message: "Plik został pomyślnie przesłany.",
-                fileName: file.name,
+                fileName: fileName,
                 url: blockBlobClient.url
             }
         };
