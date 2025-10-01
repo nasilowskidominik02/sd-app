@@ -1,29 +1,24 @@
 const { BlobServiceClient } = require("@azure/storage-blob");
 const { v4: uuidv4 } = require('uuid');
-const multiparty = require('multiparty');
 
 module.exports = async function (context, req) {
     // Sprawdzenie, czy użytkownik jest zalogowany
     const header = req.headers["x-ms-client-principal"];
     if (!header) {
-        return { status: 401, body: { message: "Brak uwierzytelnienia." }};
+        return { status: 401, body: { message: "Brak uwierzytelnienia." } };
     }
 
     try {
-        const { fields, files } = await new Promise((resolve, reject) => {
-            const form = new multiparty.Form();
-            form.parse(req, (err, fields, files) => {
-                if (err) reject(err);
-                else resolve({ fields, files });
-            });
-        });
+        // Nowoczesny sposób parsowania danych formularza w Azure Functions
+        const formData = await req.formData();
+        const file = formData.get('file');
 
-        if (!files.file || files.file.length === 0) {
-            return { status: 400, body: { message: "Nie znaleziono pliku do przesłania." }};
+        if (!file) {
+            return { status: 400, body: { message: "Nie znaleziono pliku w formularzu." } };
         }
-
-        const file = files.file[0];
-        const fileBuffer = require('fs').readFileSync(file.path);
+        
+        // NOWA, PROSTSZA METODA: Konwersja pliku na ArrayBuffer
+        const fileBuffer = await file.arrayBuffer();
 
         const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
         if (!connectionString) {
@@ -33,18 +28,19 @@ module.exports = async function (context, req) {
         const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
         const containerName = "attachments"; // Nazwa kontenera na załączniki
         const containerClient = blobServiceClient.getContainerClient(containerName);
-        await containerClient.createIfNotExists({ access: 'blob' }); // Ustawia publiczny dostęp do odczytu
+        await containerClient.createIfNotExists({ access: 'blob' });
 
-        const blobName = `${uuidv4()}-${file.originalFilename}`;
+        const blobName = `${uuidv4()}-${file.name}`;
         const blockBlobClient = containerClient.getBlockBlobClient(blobName);
         
-        await blockBlobClient.upload(fileBuffer, fileBuffer.length);
+        // Przesłanie bufora (ArrayBuffer) do Blob Storage
+        await blockBlobClient.upload(fileBuffer, fileBuffer.byteLength);
 
         context.res = {
             status: 200,
             body: { 
                 message: "Plik został pomyślnie przesłany.",
-                fileName: file.originalFilename,
+                fileName: file.name,
                 url: blockBlobClient.url
             }
         };
@@ -57,3 +53,4 @@ module.exports = async function (context, req) {
         };
     }
 };
+
