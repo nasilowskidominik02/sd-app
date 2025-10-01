@@ -5,8 +5,7 @@ module.exports = async function (context, req) {
 
     const header = req.headers['x-ms-client-principal'];
     if (!header) {
-        context.res = { status: 401, body: "User is not authenticated." };
-        return;
+        return { status: 401, body: "User is not authenticated." };
     }
     const encoded = Buffer.from(header, 'base64');
     const decoded = encoded.toString('ascii');
@@ -15,39 +14,42 @@ module.exports = async function (context, req) {
     const isServiceDesk = clientPrincipal.userRoles.includes('sd');
     const userEmail = clientPrincipal.userDetails;
 
-    // --- Paginacja ---
+    // --- Paginacja i Wyszukiwanie ---
     const page = parseInt(req.query.page) || 1;
+    const searchId = req.query.searchId || '';
     const pageSize = 10;
     const offset = (page - 1) * pageSize;
 
-    let querySpec;
-    let countQuerySpec;
+    let query = "SELECT * FROM c";
+    let countQuery = "SELECT VALUE COUNT(1) FROM c";
+    let whereClauses = [];
+    let parameters = [];
 
-    if (isServiceDesk) {
-        // Pracownik SD widzi wszystkie zgłoszenia
-        querySpec = {
-            query: "SELECT * FROM c ORDER BY c.dates.createdAt DESC OFFSET @offset LIMIT @limit",
-            parameters: [
-                { name: "@offset", value: offset },
-                { name: "@limit", value: pageSize }
-            ]
-        };
-        countQuerySpec = { query: "SELECT VALUE COUNT(1) FROM c" };
-    } else {
-        // Użytkownik widzi tylko swoje zgłoszenia
-        querySpec = {
-            query: "SELECT * FROM c WHERE c.reportingUser.email = @userEmail ORDER BY c.dates.createdAt DESC OFFSET @offset LIMIT @limit",
-            parameters: [
-                { name: "@userEmail", value: userEmail },
-                { name: "@offset", value: offset },
-                { name: "@limit", value: pageSize }
-            ]
-        };
-        countQuerySpec = {
-            query: "SELECT VALUE COUNT(1) FROM c WHERE c.reportingUser.email = @userEmail",
-            parameters: [{ name: "@userEmail", value: userEmail }]
-        };
+    // Filtrowanie dla zwykłego użytkownika
+    if (!isServiceDesk) {
+        whereClauses.push("c.reportingUser.email = @userEmail");
+        parameters.push({ name: "@userEmail", value: userEmail });
     }
+
+    // Filtrowanie po ID zgłoszenia
+    if (searchId) {
+        // Używamy STARTSWITH dla częściowego dopasowania
+        whereClauses.push("STARTSWITH(c.id, @searchId)");
+        parameters.push({ name: "@searchId", value: searchId });
+    }
+
+    if (whereClauses.length > 0) {
+        query += " WHERE " + whereClauses.join(" AND ");
+        countQuery += " WHERE " + whereClauses.join(" AND ");
+    }
+    
+    // Dodanie sortowania i paginacji do głównego zapytania
+    query += " ORDER BY c.dates.createdAt DESC OFFSET @offset LIMIT @limit";
+    parameters.push({ name: "@offset", value: offset });
+    parameters.push({ name: "@limit", value: pageSize });
+
+    const querySpec = { query, parameters };
+    const countQuerySpec = { query: countQuery, parameters: parameters.slice(0, parameters.length - 2) }; // Usuwamy parametry paginacji z zapytania liczącego
 
     try {
         const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
