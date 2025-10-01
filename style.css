@@ -46,6 +46,19 @@ a:hover {
     display: none !important;
 }
 
+.btn {
+    padding: 8px 16px;
+    border-radius: var(--border-radius);
+    border: 1px solid var(--gray-border);
+    cursor: pointer;
+    font-weight: 500;
+    background-color: var(--white);
+    transition: background-color 0.2s;
+}
+.btn:hover {
+    background-color: var(--light-gray-bg);
+}
+
 /* --- App Layout --- */
 .app-layout {
     display: flex;
@@ -132,12 +145,33 @@ a:hover {
     flex-grow: 1;
     padding: 32px;
     overflow-y: auto; /* Enable scroll only for main content */
+    display: flex;
+    flex-direction: column;
 }
 
 .main-content h1 {
     font-size: 28px;
+}
+
+.toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: 24px;
 }
+
+.search-container {
+    display: flex;
+    gap: 8px;
+}
+
+#search-input {
+    padding: 8px 12px;
+    border: 1px solid var(--gray-border);
+    border-radius: var(--border-radius);
+    min-width: 250px;
+}
+
 
 .app-footer {
     padding: 16px 32px;
@@ -190,6 +224,7 @@ a:hover {
     border-radius: var(--border-radius);
     box-shadow: var(--shadow);
     overflow-x: auto;
+    flex-grow: 1;
 }
 
 .ticket-table {
@@ -232,7 +267,6 @@ a:hover {
     font-weight: 500;
     font-size: 12px;
     color: var(--white);
-    text-transform: capitalize;
 }
 
 .status-badge.status-nieprzeczytane { background-color: var(--status-nieprzeczytane); }
@@ -245,6 +279,7 @@ a:hover {
     display: flex;
     justify-content: center;
     gap: 8px;
+    flex-shrink: 0;
 }
 
 .page-btn {
@@ -269,6 +304,10 @@ a:hover {
 /* --- New Ticket Form --- */
 .form-container {
     max-width: 800px;
+    background-color: var(--white);
+    padding: 32px;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow);
 }
 
 .form-group {
@@ -295,35 +334,29 @@ textarea.form-control {
     resize: vertical;
 }
 
-.file-input {
-    width: 100%;
-    padding: 10px;
+.file-input-wrapper {
+    position: relative;
+    overflow: hidden;
+    display: inline-block;
     border: 1px solid var(--gray-border);
     border-radius: var(--border-radius);
-    font-size: 14px;
-    font-family: 'Inter', sans-serif;
-}
-
-.file-input::file-selector-button {
-    margin-right: 12px;
-    border: none;
-    background: var(--medium-gray-bg);
-    padding: 8px 12px;
-    border-radius: var(--border-radius);
-    color: var(--text-dark);
+    padding: 10px 15px;
+    background-color: var(--white);
     cursor: pointer;
-    transition: background-color .2s ease-in-out;
 }
-
-.file-input::file-selector-button:hover {
-    background: var(--gray-border);
+.file-input-wrapper:hover {
+    background-color: var(--light-gray-bg);
 }
-
-
-.form-actions {
-    display: flex;
-    align-items: center;
-    gap: 16px;
+.file-input-wrapper input[type=file] {
+    font-size: 100px;
+    position: absolute;
+    left: 0;
+    top: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+.file-input-label {
+    color: var(--text-dark);
 }
 
 .btn-submit {
@@ -347,15 +380,14 @@ textarea.form-control {
     cursor: not-allowed;
 }
 
-#form-status {
-    font-weight: 500;
+.form-status {
+    margin-top: 16px;
+    font-size: 14px;
 }
-
-#form-status.success {
-    color: var(--status-otwarte);
+.form-status.success {
+    color: #155724;
 }
-
-#form-status.error {
+.form-status.error {
     color: var(--danger-red);
 }
 
@@ -431,13 +463,6 @@ textarea.form-control {
     gap: 16px;
 }
 
-.btn {
-    padding: 8px 16px;
-    border-radius: var(--border-radius);
-    border: 1px solid var(--gray-border);
-    cursor: pointer;
-    font-weight: 500;
-}
 .btn-primary {
     background-color: var(--primary-blue);
     color: var(--white);
@@ -449,6 +474,7 @@ textarea.form-control {
     font-size: 24px;
     font-weight: bold;
     cursor: pointer;
+    padding: 0 8px;
 }
 
 .modal-body {
@@ -465,7 +491,7 @@ textarea.form-control {
     flex-direction: column;
     gap: 16px;
     flex-shrink: 0;
-    overflow-y: auto;
+    background-color: var(--light-gray-bg);
 }
 
 .modal-actions-panel h4 {
@@ -476,7 +502,7 @@ textarea.form-control {
     width: 100%;
     padding: 10px;
     text-align: left;
-    background-color: var(--light-gray-bg);
+    background-color: var(--white);
     border: 1px solid var(--gray-border);
     border-radius: var(--border-radius);
     cursor: pointer;
@@ -501,6 +527,37 @@ textarea.form-control {
     margin-bottom: 8px;
 }
 
+#modal-attachments a {
+    display: block;
+    margin-bottom: 4px;
+}
+
+.comment-form {
+    margin-top: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.comment-form textarea {
+    min-height: 80px;
+}
+
+.comment {
+    border: 1px solid var(--gray-border);
+    border-radius: var(--border-radius);
+    padding: 12px;
+    margin-bottom: 12px;
+    background-color: #f9fafb;
+}
+.comment-author {
+    font-weight: 600;
+}
+.comment-timestamp {
+    font-size: 12px;
+    color: var(--text-light);
+    margin-bottom: 8px;
+}
+
 .modal-status {
     padding: 12px 24px;
     border-top: 1px solid var(--gray-border);
@@ -513,43 +570,5 @@ textarea.form-control {
 .modal-status.error {
     color: #721c24;
     background-color: #f8d7da;
-}
-
-.comments-section {
-    margin-top: 32px;
-}
-
-.comment-list {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    margin-bottom: 24px;
-}
-
-.comment {
-    background-color: var(--light-gray-bg);
-    padding: 16px;
-    border-radius: var(--border-radius);
-    border: 1px solid var(--gray-border);
-}
-
-.comment-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-    font-size: 14px;
-}
-
-.comment-author {
-    font-weight: 600;
-}
-
-.comment-date {
-    color: var(--text-light);
-}
-
-.add-comment-form {
-    margin-top: 24px;
 }
 
