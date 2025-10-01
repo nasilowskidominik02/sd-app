@@ -13,9 +13,6 @@ const categoryToGroupMap = {
 
 /**
  * Helper function to add a system comment to the ticket's history.
- * @param {object} ticket - The ticket object.
- * @param {string} text - The comment text.
- * @param {object} clientPrincipal - The principal of the user making the change.
  */
 function addSystemComment(ticket, text, clientPrincipal) {
     if (!ticket.comments) {
@@ -51,21 +48,27 @@ module.exports = async function (context, req) {
         const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
         const container = client.database("ServiceDeskDB").container("Tickets");
 
-        const { resource: ticket } = await container.item(ticketId, undefined).read();
-        if (!ticket) {
+        // KROK 1: Niezawodnie znajdź zgłoszenie po ID, używając zapytania
+        const querySpec = {
+            query: "SELECT * FROM c WHERE c.id = @ticketId",
+            parameters: [{ name: "@ticketId", value: ticketId }]
+        };
+        const { resources: items } = await container.items.query(querySpec).fetchAll();
+
+        if (items.length === 0) {
             return { status: 404, body: "Ticket not found." };
         }
-        
-        const originalCategory = ticket.category;
-        
-        // Zastosuj zmiany i dodaj komentarze systemowe
+        let ticket = items[0];
+        const originalCategory = ticket.category; // Zapisz oryginalną kategorię
+
+        // KROK 2: Zastosuj zmiany i dodaj komentarze systemowe
         if (changes.status && ticket.status !== changes.status) {
             addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "${changes.status}".`, clientPrincipal);
             ticket.status = changes.status;
             if (changes.status === 'Zamknięte') {
                 ticket.dates.closedAt = new Date().toISOString();
-                if (changes.newComment && changes.newComment.text) {
-                     addSystemComment(ticket, `Komentarz zamknięcia: ${changes.newComment.text}`, clientPrincipal);
+                if (changes.closingComment) {
+                     addSystemComment(ticket, `Komentarz zamknięcia: ${changes.closingComment}`, clientPrincipal);
                 }
             } else {
                 ticket.dates.closedAt = null;
@@ -92,7 +95,7 @@ module.exports = async function (context, req) {
             }
         }
 
-        if (changes.newComment && !changes.isClosingComment) {
+        if (changes.newComment) {
              if (!ticket.comments) ticket.comments = [];
              ticket.comments.push({
                 author: clientPrincipal.userDetails,
@@ -101,15 +104,12 @@ module.exports = async function (context, req) {
             });
         }
         
-        // Jeśli zmieniono kategorię (klucz partycji), musimy usunąć stary i stworzyć nowy dokument
+        // KROK 3: Zapisz zmiany, obsługując poprawnie zmianę klucza partycji
         if (ticket.category !== originalCategory) {
-             // Create the new item in the new partition
             const { resource: createdItem } = await container.items.create(ticket);
-            // Delete the old item from the old partition
             await container.item(ticketId, originalCategory).delete();
             context.res = { body: createdItem };
         } else {
-            // Standardowa aktualizacja
             const { resource: updatedItem } = await container.items.upsert(ticket);
             context.res = { body: updatedItem };
         }

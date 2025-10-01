@@ -39,8 +39,8 @@
                 <div class="toolbar">
                     <h1 id="dashboard-title">Twoje ostatnie zgłoszenia</h1>
                     <div class="search-container">
-                        <input type="search" id="search-input" placeholder="Wyszukaj po ID...">
-                        <button id="search-btn" class="btn">Szukaj</button>
+                        <input type="text" id="search-input" placeholder="Wyszukaj po ID...">
+                        <button id="search-btn">Szukaj</button>
                     </div>
                 </div>
                 
@@ -83,13 +83,13 @@
             <header class="modal-header">
                 <h2 id="modal-title">Szczegóły zgłoszenia</h2>
                 <div class="modal-header-actions">
-                    <button id="modal-save-btn" class="btn btn-primary hidden">Zapisz</button>
+                    <button id="modal-save-btn" class="btn btn-primary hidden">Zapisz zmiany</button>
                     <button id="modal-close-btn" class="btn-close">X</button>
                 </div>
             </header>
             <div id="modal-body" class="modal-body">
                 <!-- Lewy panel z akcjami (dla SD) -->
-                <div id="modal-actions-panel" class="modal-actions-panel hidden">
+                <aside id="modal-actions-panel" class="modal-actions-panel hidden">
                     <h4>Akcje</h4>
                     <button class="btn-action" data-action="close-ticket">Zamknij zgłoszenie</button>
                     <button class="btn-action" data-action="open-ticket">Ustaw jako otwarte</button>
@@ -106,7 +106,7 @@
                             <option value="Aplikacje">Aplikacje</option>
                         </select>
                     </div>
-                </div>
+                </aside>
                 <!-- Prawy panel z treścią zgłoszenia -->
                 <div class="modal-details-panel">
                     <div id="modal-meta-info" class="modal-meta-info">
@@ -116,13 +116,18 @@
                     <p id="modal-content-text"></p>
                     <h4>Załączniki:</h4>
                     <div id="modal-attachments"></div>
-                    <hr>
-                    <h4>Komentarze:</h4>
-                    <div id="modal-comments"></div>
-                    <form id="comment-form" class="comment-form hidden">
-                        <textarea id="comment-text" placeholder="Dodaj komentarz..." required></textarea>
-                        <button type="submit" class="btn">Dodaj komentarz</button>
-                    </form>
+
+                     <!-- Sekcja komentarzy -->
+                    <div class="comments-section">
+                        <h4>Historia zgłoszenia</h4>
+                        <div id="comments-list" class="comments-list">
+                            <!-- Komentarze będą wstrzykiwane tutaj -->
+                        </div>
+                        <form id="comment-form" class="comment-form hidden">
+                            <textarea id="comment-input" placeholder="Dodaj komentarz..."></textarea>
+                            <button type="submit" class="btn btn-primary">Dodaj</button>
+                        </form>
+                    </div>
                 </div>
             </div>
             <p id="modal-status" class="modal-status hidden"></p>
@@ -141,7 +146,7 @@
             return str.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
         }
 
-        // --- Paginacja i Wyszukiwanie ---
+        // --- Paginacja ---
         function renderPagination(currentPageNum, totalPages) {
             const container = document.getElementById('pagination-container');
             container.innerHTML = '';
@@ -157,27 +162,21 @@
                 container.appendChild(btn);
             }
         }
-        
-        function handleSearch() {
-            currentPage = 1; // Resetuj do pierwszej strony przy nowym wyszukiwaniu
-            loadTickets();
-        }
 
         // --- Ładowanie zgłoszeń do tabeli ---
-        async function loadTickets() {
+        async function loadTickets(searchId = '') {
             const tbody = document.getElementById('tickets-tbody');
             tbody.innerHTML = '<tr><td colspan="10">Ładowanie zgłoszeń...</td></tr>';
-            const searchId = document.getElementById('search-input').value;
             
             try {
                 const response = await fetch(`/api/getTickets?page=${currentPage}&searchId=${searchId}`);
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
-                const { tickets, totalCount, currentPage: pageFromServer, totalPages } = data;
+                const { tickets, totalPages } = data;
 
                 tbody.innerHTML = '';
                 if (tickets.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="10">Brak zgłoszeń do wyświetlenia.</td></tr>';
+                    tbody.innerHTML = `<tr><td colspan="10">Brak zgłoszeń do wyświetlenia. ${searchId ? 'Spróbuj wyczyścić filtr.' : ''}</td></tr>`;
                     renderPagination(0, 0);
                     return;
                 }
@@ -185,7 +184,7 @@
                 tickets.forEach(ticket => {
                     const row = tbody.insertRow();
                     row.className = 'ticket-row';
-                    row.onclick = () => openTicketModal(ticket.id, ticket.category);
+                    row.onclick = () => openTicketModal(ticket.id);
 
                     const statusClass = `status-${ticket.status.toLowerCase().replace(/\s/g, '-')}`;
                     const closedDate = ticket.status === 'Zamknięte' && ticket.dates.closedAt ? new Date(ticket.dates.closedAt).toLocaleString('pl-PL') : '---';
@@ -203,7 +202,7 @@
                         <td>${closedDate}</td>
                     `;
                 });
-                renderPagination(pageFromServer, totalPages);
+                renderPagination(data.currentPage, totalPages);
             } catch (error) {
                 console.error('Błąd podczas pobierania zgłoszeń:', error);
                 tbody.innerHTML = '<tr><td colspan="10" class="error-message">Wystąpił błąd podczas ładowania zgłoszeń.</td></tr>';
@@ -211,12 +210,12 @@
         }
 
         // --- Logika okna modalnego ---
-        async function openTicketModal(ticketId, category) {
+        async function openTicketModal(ticketId) {
             const modal = document.getElementById('ticket-modal');
             modal.classList.remove('hidden');
 
             try {
-                const response = await fetch(`/api/getTicket?id=${ticketId}&category=${category}`);
+                const response = await fetch(`/api/getTicket?id=${ticketId}`);
                 if (!response.ok) throw new Error('Nie udało się pobrać szczegółów zgłoszenia.');
                 currentTicketData = await response.json();
                 populateModal(currentTicketData);
@@ -226,81 +225,15 @@
             }
         }
         
-        // ... (reszta kodu modala bez zmian) ...
-
-        async function initializeDashboard() {
-            // ... (reszta kodu inicjalizującego bez zmian) ...
-            
-             // Podpięcie eventu do wyszukiwania
-            document.getElementById('search-btn').addEventListener('click', handleSearch);
-            document.getElementById('search-input').addEventListener('keyup', (event) => {
-                if (event.key === 'Enter') {
-                    handleSearch();
-                }
-            });
-
-            // ... (reszta kodu inicjalizującego) ...
-        }
-
-        // --- Pełny kod skryptu z poprzednich wersji ---
-
-        let isSdUser = false;
-
-        async function saveChanges() {
-            if (Object.keys(pendingChanges).length === 0) {
-                closeModal();
-                return;
-            }
-            const statusEl = document.getElementById('modal-status');
-            statusEl.textContent = 'Zapisywanie...';
-            statusEl.classList.remove('hidden', 'success', 'error');
-
-            try {
-                const response = await fetch('/api/updateTicket', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        ticketId: currentTicketData.id,
-                        originalCategory: currentTicketData.category,
-                        changes: pendingChanges
-                    })
-                });
-                if (!response.ok) throw new Error('Błąd podczas zapisywania zmian.');
-                
-                const updatedTicket = await response.json();
-                currentTicketData = updatedTicket; // Zaktualizuj dane lokalne
-                pendingChanges = {}; // Wyczyść zmiany
-
-                statusEl.textContent = 'Zmiany zapisane pomyślnie!';
-                statusEl.classList.add('success');
-                
-                populateModal(updatedTicket); // Odśwież widok modala
-                loadTickets(); // Odśwież listę w tle
-
-            } catch (error) {
-                 statusEl.textContent = 'Błąd: ' + error.message;
-                 statusEl.classList.add('error');
-            }
-        }
-
-        function closeModal() {
-            document.getElementById('ticket-modal').classList.add('hidden');
-            currentTicketData = null;
-            pendingChanges = {};
-            document.getElementById('modal-status').classList.add('hidden');
-        }
-
         function populateModal(ticket) {
             document.getElementById('modal-title').innerText = `Zgłoszenie: ${ticket.id}`;
             document.getElementById('modal-content-text').innerText = ticket.content;
             
             const metaInfo = `
-                <p><strong>Status:</strong> <span class="status-badge status-${ticket.status.toLowerCase().replace(/\s/g, '-')}">${escapeHTML(ticket.status)}</span></p>
+                <p><strong>Status:</strong> <span id="modal-status-badge" class="status-badge status-${ticket.status.toLowerCase().replace(/\s/g, '-')}">${escapeHTML(ticket.status)}</span></p>
                 <p><strong>Zgłaszający:</strong> ${escapeHTML(ticket.reportingUser.name)}</p>
                 <p><strong>Utworzono:</strong> ${new Date(ticket.dates.createdAt).toLocaleString('pl-PL')}</p>
                 <p><strong>SLA:</strong> ${new Date(ticket.dates.guaranteedResolutionAt).toLocaleString('pl-PL')}</p>
-                <p><strong>Odpowiedzialny:</strong> ${escapeHTML(ticket.assignedTo.person || '---')}</p>
-                <p><strong>Grupa:</strong> ${escapeHTML(ticket.assignedTo.group)}</p>
             `;
             document.getElementById('modal-meta-info').innerHTML = metaInfo;
 
@@ -319,43 +252,86 @@
                 attachmentsContainer.innerText = 'Brak załączników.';
             }
 
-            const commentsContainer = document.getElementById('modal-comments');
-            commentsContainer.innerHTML = '';
+            const commentsList = document.getElementById('comments-list');
+            commentsList.innerHTML = '';
             if (ticket.comments && ticket.comments.length > 0) {
                 ticket.comments.forEach(comment => {
                     const commentEl = document.createElement('div');
-                    commentEl.className = 'comment';
+                    commentEl.className = `comment ${comment.isSystemComment ? 'system-comment' : ''}`;
                     commentEl.innerHTML = `
-                        <div class="comment-author">${escapeHTML(comment.author)}</div>
-                        <div class="comment-timestamp">${new Date(comment.timestamp).toLocaleString('pl-PL')}</div>
-                        <div class="comment-text">${escapeHTML(comment.text)}</div>
+                        <div class="comment-header">
+                            <strong>${escapeHTML(comment.author)}</strong>
+                            <span class="comment-date">${new Date(comment.timestamp).toLocaleString('pl-PL')}</span>
+                        </div>
+                        <p class="comment-text">${escapeHTML(comment.text)}</p>
                     `;
-                    commentsContainer.appendChild(commentEl);
+                    commentsList.appendChild(commentEl);
                 });
             } else {
-                commentsContainer.innerText = 'Brak komentarzy.';
+                commentsList.innerHTML = '<p>Brak komentarzy.</p>';
             }
 
-            const actionsPanel = document.getElementById('modal-actions-panel');
-            const saveButton = document.getElementById('modal-save-btn');
-            const commentForm = document.getElementById('comment-form');
-            
-            actionsPanel.classList.toggle('hidden', !isSdUser);
-            saveButton.classList.toggle('hidden', !isSdUser);
-            commentForm.classList.toggle('hidden', !isSdUser);
+            const isServiceDesk = currentUserDetails.userRoles.includes('sd');
+            document.getElementById('modal-actions-panel').classList.toggle('hidden', !isServiceDesk);
+            document.getElementById('modal-save-btn').classList.toggle('hidden', !isServiceDesk);
+            document.getElementById('comment-form').classList.toggle('hidden', !isServiceDesk);
             document.getElementById('category-select').value = ticket.category;
         }
 
-        async function handleCommentSubmit(event) {
-            event.preventDefault();
-            const text = document.getElementById('comment-text').value;
-            if (!text.trim()) return;
-
-            pendingChanges.newComment = { text };
-            await saveChanges();
-            document.getElementById('comment-text').value = '';
+        function closeModal() {
+            document.getElementById('ticket-modal').classList.add('hidden');
+            currentTicketData = null;
+            pendingChanges = {};
+            document.getElementById('modal-status').classList.add('hidden');
+            document.getElementById('comment-input').value = '';
         }
 
+        async function saveChanges() {
+            if (Object.keys(pendingChanges).length === 0) {
+                closeModal();
+                return;
+            }
+            
+            const statusEl = document.getElementById('modal-status');
+            statusEl.textContent = 'Zapisywanie...';
+            statusEl.classList.remove('hidden', 'success', 'error');
+
+            try {
+                const response = await fetch('/api/updateTicket', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ticketId: currentTicketData.id,
+                        changes: pendingChanges
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Błąd serwera: ${errorText}`);
+                }
+                
+                const updatedTicket = await response.json();
+
+                statusEl.textContent = 'Zmiany zapisane pomyślnie!';
+                statusEl.classList.add('success');
+                
+                pendingChanges = {};
+                currentTicketData = updatedTicket;
+                populateModal(currentTicketData); // Odśwież widok modala
+                loadTickets(); // Odśwież listę w tle
+
+                setTimeout(() => {
+                    statusEl.classList.add('hidden');
+                }, 2000);
+
+            } catch (error) {
+                 statusEl.textContent = 'Błąd: ' + error.message;
+                 statusEl.classList.add('error');
+            }
+        }
+
+        // --- Inicjalizacja strony ---
         async function initializeDashboard() {
             try {
                 const response = await fetch('/.auth/me');
@@ -368,47 +344,64 @@
                 currentUserDetails = data.clientPrincipal;
                 document.getElementById('userName').textContent = currentUserDetails.userDetails;
                 
-                isSdUser = currentUserDetails.userRoles.includes('sd');
+                const isServiceDesk = currentUserDetails.userRoles.includes('sd');
                 
-                if (isSdUser) {
+                if (isServiceDesk) {
                     document.getElementById('admin-link').classList.remove('hidden');
                     document.getElementById('dashboard-title').textContent = "Wszystkie ostatnie zgłoszenia";
                 }
 
                 loadTickets();
-                setInterval(() => loadTickets(), 60000); // Auto-refresh co minutę
+                setInterval(() => loadTickets(document.getElementById('search-input').value), 60000);
 
+                // Podpięcie eventów
                 document.getElementById('modal-close-btn').addEventListener('click', closeModal);
                 document.getElementById('modal-save-btn').addEventListener('click', saveChanges);
-                document.getElementById('comment-form').addEventListener('submit', handleCommentSubmit);
+                document.getElementById('search-btn').addEventListener('click', () => {
+                    currentPage = 1;
+                    loadTickets(document.getElementById('search-input').value);
+                });
+                document.getElementById('search-input').addEventListener('keyup', (e) => {
+                    if (e.key === 'Enter') {
+                        currentPage = 1;
+                        loadTickets(document.getElementById('search-input').value);
+                    }
+                });
 
                 document.querySelectorAll('.btn-action').forEach(btn => {
                     btn.addEventListener('click', (e) => {
                         const action = e.target.dataset.action;
                         if (action === 'close-ticket') {
-                            const reason = prompt("Proszę podać powód zamknięcia zgłoszenia:");
-                            if (reason) {
+                            const reason = prompt("Wprowadź komentarz zamknięcia zgłoszenia:");
+                            if(reason) {
                                 pendingChanges.status = 'Zamknięte';
-                                pendingChanges.newComment = { text: `Zgłoszenie zamknięte: ${reason}` };
-                            } else return;
+                                pendingChanges.closingComment = reason;
+                            } else {
+                                return; // Anuluj, jeśli użytkownik nie wpisał powodu
+                            }
                         }
-                        if(action === 'open-ticket') pendingChanges.status = 'Otwarte';
-                        if(action === 'assign-tome') pendingChanges.assignedTo = { person: currentUserDetails.userDetails };
+                        if (action === 'open-ticket') pendingChanges.status = 'Otwarte';
+                        if (action === 'assign-tome') pendingChanges.assignedTo = { person: currentUserDetails.userDetails };
                         
                         document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
                         document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
                     });
                 });
+                
                 document.getElementById('category-select').addEventListener('change', (e) => {
                     pendingChanges.category = e.target.value;
                     document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
                     document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
                 });
                 
-                document.getElementById('search-btn').addEventListener('click', handleSearch);
-                document.getElementById('search-input').addEventListener('keyup', (event) => {
-                    if (event.key === 'Enter') {
-                        handleSearch();
+                document.getElementById('comment-form').addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const commentInput = document.getElementById('comment-input');
+                    if(commentInput.value.trim()){
+                        pendingChanges.newComment = { text: commentInput.value.trim() };
+                        commentInput.value = '';
+                        document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
+                        document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
                     }
                 });
 
@@ -418,10 +411,9 @@
                  window.location.href = 'index.html';
             }
         }
-        
+
         initializeDashboard();
     </script>
-
 </body>
 </html>
 
