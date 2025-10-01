@@ -41,11 +41,11 @@
                 <form id="new-ticket-form" class="form-container">
                     <div class="form-group">
                         <label for="title">Tytuł zgłoszenia</label>
-                        <input type="text" id="title" name="title" class="form-control" required>
+                        <input type="text" id="title" class="form-control" name="title" required>
                     </div>
                     <div class="form-group">
                         <label for="content">Treść zgłoszenia</label>
-                        <textarea id="content" name="content" rows="10" class="form-control" required></textarea>
+                        <textarea id="content" class="form-control" name="content" rows="10" required></textarea>
                     </div>
                      <div class="form-group">
                         <label for="attachment">Załącznik (opcjonalnie)</label>
@@ -68,6 +68,16 @@
     </div>
     
     <script>
+        // Helper function to convert file to Base64
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+            });
+        }
+
         async function initializePage() {
             try {
                 const response = await fetch('/.auth/me');
@@ -98,23 +108,28 @@
             const statusMessage = document.getElementById('form-status');
 
             submitButton.disabled = true;
-            statusMessage.textContent = 'Przetwarzanie...';
+            statusMessage.textContent = 'Przygotowywanie danych...';
             statusMessage.classList.remove('hidden', 'success', 'error');
 
             let attachmentInfo = null;
             const fileInput = form.elements.attachment;
 
-            // Krok 1: Prześlij plik, jeśli został wybrany
+            // Krok 1: Prześlij plik, jeśli został wybrany (NOWA METODA)
             if (fileInput.files.length > 0) {
-                statusMessage.textContent = 'Przesyłanie załącznika...';
+                statusMessage.textContent = 'Przetwarzanie załącznika...';
                 const file = fileInput.files[0];
-                const formData = new FormData();
-                formData.append('file', file);
-
+                
                 try {
+                    const base64File = await fileToBase64(file);
+                    
+                    statusMessage.textContent = 'Przesyłanie załącznika...';
                     const uploadResponse = await fetch('/api/uploadAttachment', {
                         method: 'POST',
-                        body: formData
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            fileName: file.name,
+                            fileContent: base64File // Wysyłamy zakodowany plik
+                        })
                     });
 
                     if (!uploadResponse.ok) {
@@ -145,8 +160,8 @@
                 });
 
                 if (!response.ok) {
-                    const errorData = await response.text(); // Zmieniono na .text() dla lepszego debugowania
-                    throw new Error(errorData || `HTTP error! status: ${response.status}`);
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
                 }
 
                 statusMessage.textContent = 'Zgłoszenie zostało pomyślnie utworzone! Przekierowywanie...';
