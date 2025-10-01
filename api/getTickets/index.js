@@ -33,7 +33,7 @@ module.exports = async function (context, req) {
 
     // Filtrowanie po ID zgłoszenia
     if (searchId) {
-        // Używamy STARTSWITH dla częściowego dopasowania
+        // Używamy STARTSWITH для częściowego dopasowania
         whereClauses.push("STARTSWITH(c.id, @searchId)");
         parameters.push({ name: "@searchId", value: searchId });
     }
@@ -49,8 +49,10 @@ module.exports = async function (context, req) {
     parameters.push({ name: "@limit", value: pageSize });
 
     const querySpec = { query, parameters };
-    const countQuerySpec = { query: countQuery, parameters: parameters.slice(0, parameters.length - 2) }; // Usuwamy parametry paginacji z zapytania liczącego
-
+    // Usuwamy parametry paginacji z zapytania liczącego
+    const countParams = parameters.filter(p => p.name !== '@offset' && p.name !== '@limit');
+    const countQuerySpec = { query: countQuery, parameters: countParams }; 
+    
     try {
         const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
         const database = client.database("ServiceDeskDB");

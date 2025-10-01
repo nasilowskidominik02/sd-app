@@ -572,3 +572,12 @@ textarea.form-control {
     background-color: #f8d7da;
 }
 
+.comment.system-comment {
+    background-color: #fffbe6; /* Lekko żółtawe tło */
+    border-left: 4px solid #ffc107; /* Akcent kolorystyczny po lewej */
+}
+
+.comment.system-comment .comment-text {
+    font-style: italic; /* Kursywa dla tekstu systemowego */
+    color: var(--text-light);
+}

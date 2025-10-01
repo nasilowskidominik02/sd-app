@@ -11,6 +11,24 @@ const categoryToGroupMap = {
     "Inne": "Pierwsza linia wsparcia"
 };
 
+/**
+ * Helper function to add a system comment to the ticket's history.
+ * @param {object} ticket - The ticket object.
+ * @param {string} text - The comment text.
+ * @param {object} clientPrincipal - The principal of the user making the change.
+ */
+function addSystemComment(ticket, text, clientPrincipal) {
+    if (!ticket.comments) {
+        ticket.comments = [];
+    }
+    ticket.comments.push({
+        author: `System (${clientPrincipal.userDetails})`,
+        text: text,
+        timestamp: new Date().toISOString(),
+        isSystemComment: true
+    });
+}
+
 module.exports = async function (context, req) {
     const header = req.headers['x-ms-client-principal'];
     if (!header) {
@@ -33,81 +51,71 @@ module.exports = async function (context, req) {
         const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
         const container = client.database("ServiceDeskDB").container("Tickets");
 
-        const querySpec = {
-            query: "SELECT * FROM c WHERE c.id = @ticketId",
-            parameters: [{ name: "@ticketId", value: ticketId }]
-        };
-        const { resources: items } = await container.items.query(querySpec).fetchAll();
-
-        if (items.length === 0) {
+        const { resource: ticket } = await container.item(ticketId, undefined).read();
+        if (!ticket) {
             return { status: 404, body: "Ticket not found." };
         }
-        let ticket = items[0];
-        const originalCategory = ticket.category; // Zapisujemy oryginalną kategorię (klucz partycji)
-
-        if (!ticket.comments) {
-            ticket.comments = [];
-        }
-
-        // Zastosuj zmiany
-        let categoryChanged = false;
-        if (changes.status) {
+        
+        const originalCategory = ticket.category;
+        
+        // Zastosuj zmiany i dodaj komentarze systemowe
+        if (changes.status && ticket.status !== changes.status) {
+            addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "${changes.status}".`, clientPrincipal);
             ticket.status = changes.status;
-            if (changes.status === 'Zamknięte' && !ticket.dates.closedAt) {
+            if (changes.status === 'Zamknięte') {
                 ticket.dates.closedAt = new Date().toISOString();
                 if (changes.newComment && changes.newComment.text) {
-                    ticket.comments.push({
-                        author: clientPrincipal.userDetails,
-                        text: changes.newComment.text,
-                        timestamp: new Date().toISOString()
-                    });
+                     addSystemComment(ticket, `Komentarz zamknięcia: ${changes.newComment.text}`, clientPrincipal);
                 }
-            } else if (changes.status !== 'Zamknięte') {
+            } else {
                 ticket.dates.closedAt = null;
             }
         }
-        if (changes.assignedTo && changes.assignedTo.person) {
+
+        if (changes.assignedTo && changes.assignedTo.person && ticket.assignedTo.person !== changes.assignedTo.person) {
+            addSystemComment(ticket, `Przypisano zgłoszenie do: ${changes.assignedTo.person}.`, clientPrincipal);
             ticket.assignedTo.person = changes.assignedTo.person;
         }
-        if (changes.category && changes.category !== originalCategory) {
-            const newCategory = changes.category;
-            const newGroup = categoryToGroupMap[newCategory] || "Pierwsza linia wsparcia";
-            
-            ticket.category = newCategory;
-            ticket.assignedTo.group = newGroup;
-            categoryChanged = true;
 
-            // NOWA LOGIKA: Jeśli nowa grupa jest inna niż "Pierwsza linia wsparcia",
-            // czyścimy przypisanie do konkretnej osoby.
-            if (newGroup !== "Pierwsza linia wsparcia") {
-                ticket.assignedTo.person = null;
+        if (changes.category && ticket.category !== changes.category) {
+            addSystemComment(ticket, `Zmieniono kategorię z "${ticket.category}" na "${changes.category}".`, clientPrincipal);
+            ticket.category = changes.category;
+            
+            const newGroup = categoryToGroupMap[changes.category] || "Pierwsza linia wsparcia";
+            if (newGroup !== ticket.assignedTo.group) {
+                addSystemComment(ticket, `Zmieniono grupę odpowiedzialną na: ${newGroup}.`, clientPrincipal);
+                ticket.assignedTo.group = newGroup;
+                if(ticket.assignedTo.person){
+                    addSystemComment(ticket, `Usunięto przypisanie osoby z powodu zmiany grupy.`, clientPrincipal);
+                    ticket.assignedTo.person = null;
+                }
             }
         }
-        if (changes.newComment && changes.newComment.text && changes.status !== 'Zamknięte') {
+
+        if (changes.newComment && !changes.isClosingComment) {
+             if (!ticket.comments) ticket.comments = [];
              ticket.comments.push({
                 author: clientPrincipal.userDetails,
                 text: changes.newComment.text,
                 timestamp: new Date().toISOString()
             });
         }
-
-        let updatedItem;
-
-        if (categoryChanged) {
-            // Jeśli klucz partycji (kategoria) się zmienił, musimy usunąć stary dokument i stworzyć nowy.
-            await container.items.create(ticket);
-            await container.item(ticket.id, originalCategory).delete();
-            updatedItem = ticket;
+        
+        // Jeśli zmieniono kategorię (klucz partycji), musimy usunąć stary i stworzyć nowy dokument
+        if (ticket.category !== originalCategory) {
+             // Create the new item in the new partition
+            const { resource: createdItem } = await container.items.create(ticket);
+            // Delete the old item from the old partition
+            await container.item(ticketId, originalCategory).delete();
+            context.res = { body: createdItem };
         } else {
-            // Jeśli kategoria się nie zmieniła, po prostu aktualizujemy istniejący dokument.
-            const { resource } = await container.items.upsert(ticket);
-            updatedItem = resource;
+            // Standardowa aktualizacja
+            const { resource: updatedItem } = await container.items.upsert(ticket);
+            context.res = { body: updatedItem };
         }
 
-        context.res = { body: updatedItem };
-
     } catch (error) {
-        context.log.error("Error in updateTicket:", error);
+        context.log.error("Error in updateTicket:", error.stack);
         context.res = { status: 500, body: "Error updating the ticket." };
     }
 };
