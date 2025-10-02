@@ -133,6 +133,37 @@
             <p id="modal-status" class="modal-status hidden"></p>
         </div>
     </div>
+
+    <!-- NOWY MODAL: Okno do zamykania zgłoszenia -->
+    <div id="closing-modal" class="modal-overlay hidden">
+        <div class="modal-content" style="max-width: 600px; height: auto;">
+            <header class="modal-header">
+                <h2>Zamknij zgłoszenie</h2>
+                <button id="closing-modal-close-btn" class="btn-close">X</button>
+            </header>
+            <form id="closing-form" class="modal-body" style="display: block; padding: 24px;">
+                <div class="form-group">
+                    <label>Status zamknięcia</label>
+                    <div class="radio-group">
+                        <label><input type="radio" name="closingStatus" value="Rozwiązane" checked> Rozwiązane</label>
+                        <label><input type="radio" name="closingStatus" value="Odrzucone"> Odrzucone</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="closing-comment-input">Komentarz zamknięcia (wymagany)</label>
+                    <textarea id="closing-comment-input" class="form-control" rows="5" required></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="closing-attachment-input">Załącznik (opcjonalnie)</label>
+                    <input type="file" id="closing-attachment-input" class="file-input">
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Potwierdź zamknięcie</button>
+                    <p id="closing-modal-status" class="hidden"></p>
+                </div>
+            </form>
+        </div>
+    </div>
     
     <script>
         let currentUserDetails = null;
@@ -187,7 +218,7 @@
                     row.onclick = () => openTicketModal(ticket.id);
 
                     const statusClass = `status-${ticket.status.toLowerCase().replace(/\s/g, '-')}`;
-                    const closedDate = ticket.status === 'Zamknięte' && ticket.dates.closedAt ? new Date(ticket.dates.closedAt).toLocaleString('pl-PL') : '---';
+                    const closedDate = ['Zamknięte', 'Rozwiązane', 'Odrzucone'].includes(ticket.status) && ticket.dates.closedAt ? new Date(ticket.dates.closedAt).toLocaleString('pl-PL') : '---';
 
                     row.innerHTML = `
                         <td>${escapeHTML(ticket.id)}</td>
@@ -213,7 +244,7 @@
         async function openTicketModal(ticketId) {
             const modal = document.getElementById('ticket-modal');
             modal.classList.remove('hidden');
-            document.getElementById('modal-body').innerHTML = '<p>Ładowanie szczegółów...</p>';
+            document.getElementById('modal-body').innerHTML = '<p class="loading-message">Ładowanie szczegółów...</p>';
 
             try {
                 const response = await fetch(`/api/getTicket?id=${ticketId}`);
@@ -222,13 +253,13 @@
                 populateModal(currentTicketData);
             } catch(error) {
                 console.error(error);
-                document.getElementById('modal-body').innerText = 'Wystąpił błąd.';
+                document.getElementById('modal-body').innerHTML = '<p class="error-message">Wystąpił błąd podczas ładowania danych.</p>';
             }
         }
         
         function populateModal(ticket) {
             const modalBody = document.getElementById('modal-body');
-            // Przywróć oryginalną strukturę HTML, jeśli została zmieniona przez komunikat o błędzie
+            // Przywróć oryginalną strukturę HTML, jeśli została zmieniona przez komunikat o błędzie/ładowaniu
             modalBody.innerHTML = `
                 <aside id="modal-actions-panel" class="modal-actions-panel hidden">
                     <h4>Akcje</h4>
@@ -294,15 +325,20 @@
             const commentsList = document.getElementById('comments-list');
             commentsList.innerHTML = '';
             if (ticket.comments && ticket.comments.length > 0) {
+                ticket.comments.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); // Sortuj komentarze od najnowszych
                 ticket.comments.forEach(comment => {
                     const commentEl = document.createElement('div');
                     commentEl.className = `comment ${comment.isSystemComment ? 'system-comment' : ''}`;
+                    const attachmentHTML = comment.attachment 
+                        ? `<div class="comment-attachment"><a href="${comment.attachment.url}" target="_blank">${escapeHTML(comment.attachment.fileName)}</a></div>` 
+                        : '';
                     commentEl.innerHTML = `
                         <div class="comment-header">
                             <strong>${escapeHTML(comment.author)}</strong>
                             <span class="comment-date">${new Date(comment.timestamp).toLocaleString('pl-PL')}</span>
                         </div>
                         <p class="comment-text">${escapeHTML(comment.text)}</p>
+                        ${attachmentHTML}
                     `;
                     commentsList.appendChild(commentEl);
                 });
@@ -310,29 +346,26 @@
                 commentsList.innerHTML = '<p>Brak komentarzy.</p>';
             }
 
-            // NOWA LOGIKA: Zarządzanie widocznością kontrolek
             const isServiceDesk = currentUserDetails.userRoles.includes('sd');
-            const isClosed = ticket.status === 'Zamknięte';
+            const isClosed = ['Rozwiązane', 'Odrzucone'].includes(ticket.status);
 
             document.getElementById('modal-save-btn').classList.toggle('hidden', !isServiceDesk);
             document.getElementById('modal-actions-panel').classList.toggle('hidden', !isServiceDesk);
 
             if (isServiceDesk) {
-                const actions = document.querySelectorAll('#modal-actions-panel .btn-action, #modal-actions-panel select');
-                actions.forEach(action => {
-                    if (action.dataset.action === 'open-ticket') {
-                        action.style.display = isClosed ? 'block' : 'none';
+                document.querySelectorAll('#modal-actions-panel > *').forEach(el => {
+                    const action = el.dataset.action;
+                    if (action === 'open-ticket') {
+                        el.style.display = isClosed ? 'block' : 'none';
                     } else {
-                        action.style.display = isClosed ? 'none' : 'block';
+                        el.style.display = isClosed ? 'none' : 'block';
                     }
                 });
-                // Ukryj również label dla kategorii, jeśli jest zablokowana
-                document.querySelector('label[for="category-select"]').style.display = isClosed ? 'none' : 'block';
                 document.getElementById('comment-form').classList.toggle('hidden', isClosed);
             }
-
+            
             document.getElementById('category-select').value = ticket.category;
-            addModalEventListeners(); // Ponowne podpięcie eventów
+            addModalEventListeners();
         }
 
         function closeModal() {
@@ -345,7 +378,7 @@
 
         async function saveChanges() {
             if (Object.keys(pendingChanges).length === 0) {
-                closeModal();
+                // closeModal(); // Nie zamykaj, jeśli nie było zmian
                 return;
             }
             
@@ -375,8 +408,8 @@
                 
                 pendingChanges = {};
                 currentTicketData = updatedTicket;
-                populateModal(currentTicketData); // Odśwież widok modala
-                loadTickets(); // Odśwież listę w tle
+                populateModal(currentTicketData); 
+                loadTickets(); 
 
                 setTimeout(() => {
                     statusEl.classList.add('hidden');
@@ -387,9 +420,9 @@
                  statusEl.classList.add('error');
             }
         }
-
+        
         function addModalEventListeners() {
-            // Eventy podpinane są raz, ale musimy je wywołać po odtworzeniu HTML
+            // Używamy .onclick, aby nadpisać poprzednie listenery i uniknąć duplikatów
             document.getElementById('modal-close-btn').onclick = closeModal;
             document.getElementById('modal-save-btn').onclick = saveChanges;
 
@@ -397,19 +430,15 @@
                 btn.onclick = (e) => {
                     const action = e.target.dataset.action;
                     if (action === 'close-ticket') {
-                        const reason = prompt("Wprowadź komentarz zamknięcia zgłoszenia:");
-                        if(reason && reason.trim()) {
-                            pendingChanges.status = 'Zamknięte';
-                            pendingChanges.closingComment = reason.trim();
-                        } else {
-                            return; 
-                        }
+                        openClosingModal();
                     }
                     if (action === 'open-ticket') pendingChanges.status = 'Otwarte';
                     if (action === 'assign-tome') pendingChanges.assignedTo = { person: currentUserDetails.userDetails };
                     
-                    document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
-                    document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
+                    if(action !== 'close-ticket') {
+                        document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
+                        document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
+                    }
                 };
             });
             
@@ -452,7 +481,11 @@
                 }
 
                 loadTickets();
-                setInterval(() => loadTickets(document.getElementById('search-input').value), 60000);
+                setInterval(() => {
+                    if (!document.querySelector('.modal-overlay:not(.hidden)')) {
+                        loadTickets(document.getElementById('search-input').value)
+                    }
+                }, 60000);
 
                 // Główne eventy strony
                 document.getElementById('search-btn').addEventListener('click', () => {
@@ -465,6 +498,11 @@
                         loadTickets(document.getElementById('search-input').value);
                     }
                 });
+                
+                // Eventy dla nowego modala zamykania
+                document.getElementById('closing-modal-close-btn').addEventListener('click', closeClosingModal);
+                document.getElementById('closing-form').addEventListener('submit', handleClosingFormSubmit);
+
             } catch (error) {
                 console.error('Błąd inicjalizacji panelu:', error);
                  window.location.href = 'index.html';
