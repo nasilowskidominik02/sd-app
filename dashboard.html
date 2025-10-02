@@ -170,6 +170,7 @@
         let currentTicketData = null;
         let pendingChanges = {};
         let currentPage = 1;
+        let refreshInterval;
 
         // --- Funkcje pomocnicze ---
         function escapeHTML(str) {
@@ -215,10 +216,11 @@
                 tickets.forEach(ticket => {
                     const row = tbody.insertRow();
                     row.className = 'ticket-row';
+                    row.dataset.ticketId = ticket.id; // Używamy dataset do przechowywania ID
                     row.onclick = () => openTicketModal(ticket.id);
 
                     const statusClass = `status-${ticket.status.toLowerCase().replace(/\s/g, '-')}`;
-                    const closedDate = ['Zamknięte', 'Rozwiązane', 'Odrzucone'].includes(ticket.status) && ticket.dates.closedAt ? new Date(ticket.dates.closedAt).toLocaleString('pl-PL') : '---';
+                    const closedDate = ['Rozwiązane', 'Odrzucone'].includes(ticket.status) && ticket.dates.closedAt ? new Date(ticket.dates.closedAt).toLocaleString('pl-PL') : '---';
 
                     row.innerHTML = `
                         <td>${escapeHTML(ticket.id)}</td>
@@ -245,6 +247,7 @@
             const modal = document.getElementById('ticket-modal');
             modal.classList.remove('hidden');
             document.getElementById('modal-body').innerHTML = '<p class="loading-message">Ładowanie szczegółów...</p>';
+            clearInterval(refreshInterval); // Zatrzymaj odświeżanie w tle
 
             try {
                 const response = await fetch(`/api/getTicket?id=${ticketId}`);
@@ -259,7 +262,6 @@
         
         function populateModal(ticket) {
             const modalBody = document.getElementById('modal-body');
-            // Przywróć oryginalną strukturę HTML, jeśli została zmieniona przez komunikat o błędzie/ładowaniu
             modalBody.innerHTML = `
                 <aside id="modal-actions-panel" class="modal-actions-panel hidden">
                     <h4>Akcje</h4>
@@ -325,7 +327,7 @@
             const commentsList = document.getElementById('comments-list');
             commentsList.innerHTML = '';
             if (ticket.comments && ticket.comments.length > 0) {
-                ticket.comments.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); // Sortuj komentarze od najnowszych
+                ticket.comments.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
                 ticket.comments.forEach(comment => {
                     const commentEl = document.createElement('div');
                     commentEl.className = `comment ${comment.isSystemComment ? 'system-comment' : ''}`;
@@ -374,11 +376,12 @@
             pendingChanges = {};
             document.getElementById('modal-status').classList.add('hidden');
             document.getElementById('comment-input').value = '';
+            // Wznów odświeżanie w tle
+            startAutoRefresh();
         }
 
         async function saveChanges() {
             if (Object.keys(pendingChanges).length === 0) {
-                // closeModal(); // Nie zamykaj, jeśli nie było zmian
                 return;
             }
             
@@ -420,9 +423,67 @@
                  statusEl.classList.add('error');
             }
         }
+
+        function openClosingModal() {
+            document.getElementById('closing-modal').classList.remove('hidden');
+        }
+
+        function closeClosingModal() {
+            const modal = document.getElementById('closing-modal');
+            modal.classList.add('hidden');
+            document.getElementById('closing-form').reset();
+            document.getElementById('closing-modal-status').classList.add('hidden');
+        }
+
+        async function handleClosingFormSubmit(event) {
+            event.preventDefault();
+            const form = event.target;
+            const submitButton = form.querySelector('button[type="submit"]');
+            const statusMessage = document.getElementById('closing-modal-status');
+            
+            submitButton.disabled = true;
+            statusMessage.textContent = 'Przetwarzanie...';
+            statusMessage.classList.remove('hidden', 'success', 'error');
+
+            let attachmentInfo = null;
+            const fileInput = form.elements['closing-attachment-input'];
+
+            if (fileInput.files.length > 0) {
+                statusMessage.textContent = 'Przesyłanie załącznika...';
+                const file = fileInput.files[0];
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                await new Promise(resolve => reader.onload = resolve);
+
+                try {
+                    const uploadResponse = await fetch('/api/uploadAttachment', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ fileName: file.name, fileContent: reader.result })
+                    });
+                    if (!uploadResponse.ok) throw new Error('Błąd podczas przesyłania pliku.');
+                    attachmentInfo = await uploadResponse.json();
+                } catch (error) {
+                    statusMessage.textContent = `Błąd: ${error.message}`;
+                    statusMessage.classList.add('error');
+                    submitButton.disabled = false;
+                    return;
+                }
+            }
+            
+            pendingChanges = {
+                status: form.elements.closingStatus.value,
+                newComment: {
+                    text: `Zgłoszenie zamknięte jako "${form.elements.closingStatus.value}": ${form.elements['closing-comment-input'].value}`,
+                    attachment: attachmentInfo ? { fileName: attachmentInfo.fileName, url: attachmentInfo.url } : null
+                }
+            };
+            
+            await saveChanges();
+            closeClosingModal();
+        }
         
         function addModalEventListeners() {
-            // Używamy .onclick, aby nadpisać poprzednie listenery i uniknąć duplikatów
             document.getElementById('modal-close-btn').onclick = closeModal;
             document.getElementById('modal-save-btn').onclick = saveChanges;
 
@@ -460,10 +521,26 @@
             };
         }
 
+        function startAutoRefresh() {
+             clearInterval(refreshInterval); // Wyczyść stary interwał na wszelki wypadek
+             refreshInterval = setInterval(() => {
+                // Odświeżaj tylko jeśli żadne okno modalne nie jest otwarte
+                if (document.getElementById('ticket-modal').classList.contains('hidden') && 
+                    document.getElementById('closing-modal').classList.contains('hidden')) {
+                    loadTickets(document.getElementById('search-input').value);
+                }
+            }, 60000);
+        }
+
         // --- Inicjalizacja strony ---
         async function initializeDashboard() {
             try {
                 const response = await fetch('/.auth/me');
+                if (response.status === 401) {
+                    // Jeśli sesja wygasła lub użytkownik nie jest zalogowany, przekieruj
+                    window.location.href = '/index.html';
+                    return;
+                }
                 const data = await response.json();
                 
                 if (!data.clientPrincipal) {
@@ -481,11 +558,7 @@
                 }
 
                 loadTickets();
-                setInterval(() => {
-                    if (!document.querySelector('.modal-overlay:not(.hidden)')) {
-                        loadTickets(document.getElementById('search-input').value)
-                    }
-                }, 60000);
+                startAutoRefresh();
 
                 // Główne eventy strony
                 document.getElementById('search-btn').addEventListener('click', () => {
@@ -505,7 +578,8 @@
 
             } catch (error) {
                 console.error('Błąd inicjalizacji panelu:', error);
-                 window.location.href = 'index.html';
+                 // W przypadku błędu (np. problem z siecią), unikamy pętli przekierowań
+                 // Można tu wyświetlić komunikat o błędzie na stronie, zamiast przekierowywać.
             }
         }
 
