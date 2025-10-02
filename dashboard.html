@@ -352,15 +352,16 @@
                 commentsList.innerHTML = '<p>Brak komentarzy.</p>';
             }
 
-            // NOWA, POPRAWIONA LOGIKA WIDOCZNOŚCI
             const isServiceDesk = currentUserDetails.userRoles.includes('sd');
             const isClosed = ['Rozwiązane', 'Odrzucone', 'Zamknięte'].includes(ticket.status);
             const actionsPanel = document.getElementById('modal-actions-panel');
-
-            actionsPanel.classList.toggle('hidden', !isServiceDesk);
-            actionsPanel.classList.toggle('is-closed', isClosed); // Dodaj/usuń klasę sterującą
             
-            document.getElementById('modal-save-btn').classList.toggle('hidden', !isServiceDesk || isClosed);
+            actionsPanel.classList.toggle('hidden', !isServiceDesk);
+            actionsPanel.classList.toggle('is-closed', isClosed);
+            
+            // POPRAWIONA LOGIKA WIDOCZNOŚCI PRZYCISKU ZAPISU
+            document.getElementById('modal-save-btn').classList.toggle('hidden', !isServiceDesk);
+
             document.getElementById('comment-form').classList.toggle('hidden', !isServiceDesk || isClosed);
             
             document.getElementById('category-select').value = ticket.category;
@@ -489,8 +490,14 @@
                     if (action === 'close-ticket') {
                         openClosingModal();
                     }
-                    if (action === 'open-ticket') pendingChanges.status = 'Otwarte';
-                    if (action === 'assign-tome') pendingChanges.assignedTo = { person: currentUserDetails.userDetails };
+                    if (action === 'open-ticket') {
+                        pendingChanges.status = 'Otwarte';
+                        // POPRAWKA: Pokaż przycisk zapisu po kliknięciu "Otwórz"
+                        document.getElementById('modal-save-btn').classList.remove('hidden');
+                    }
+                    if (action === 'assign-tome') {
+                        pendingChanges.assignedTo = { person: currentUserDetails.userDetails };
+                    }
                     
                     if(action !== 'close-ticket') {
                         document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
