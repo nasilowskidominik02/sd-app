@@ -500,15 +500,12 @@ textarea.form-control {
 }
 
 /* POPRAWIONA LOGIKA WIDOCZNOŚCI PRZYCISKÓW */
-.modal-actions-panel.is-closed .btn-action:not([data-action="open-ticket"]),
-.modal-actions-panel.is-closed .form-group {
+.modal-actions-panel.is-closed > *:not([data-action="open-ticket"]) {
     display: none;
 }
+
 .modal-actions-panel:not(.is-closed) .btn-action[data-action="open-ticket"] {
     display: none;
-}
-.modal-actions-panel.is-closed .btn-action[data-action="open-ticket"] {
-    display: block;
 }
 
 
