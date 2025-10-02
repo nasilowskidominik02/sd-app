@@ -40,7 +40,7 @@
                     <h1 id="dashboard-title">Twoje ostatnie zgłoszenia</h1>
                     <div class="search-container">
                         <input type="text" id="search-input" placeholder="Wyszukaj po ID...">
-                        <button id="search-btn">Szukaj</button>
+                        <button id="search-btn" class="btn-primary">Szukaj</button>
                     </div>
                 </div>
                 
@@ -88,47 +88,7 @@
                 </div>
             </header>
             <div id="modal-body" class="modal-body">
-                <!-- Lewy panel z akcjami (dla SD) -->
-                <aside id="modal-actions-panel" class="modal-actions-panel hidden">
-                    <h4>Akcje</h4>
-                    <button class="btn-action" data-action="close-ticket">Zamknij zgłoszenie</button>
-                    <button class="btn-action" data-action="open-ticket">Ustaw jako otwarte</button>
-                    <button class="btn-action" data-action="assign-tome">Przypisz do mnie</button>
-                    <div class="form-group">
-                        <label for="category-select">Zmień kategorię</label>
-                        <select id="category-select" class="form-control">
-                            <option value="Inne">Inne</option>
-                            <option value="Instalacja oprogramowania">Instalacja oprogramowania</option>
-                            <option value="Konfiguracja oprogramowania">Konfiguracja oprogramowania</option>
-                            <option value="Hardware">Hardware</option>
-                            <option value="Infrastruktura">Infrastruktura</option>
-                            <option value="Konto">Konto</option>
-                            <option value="Aplikacje">Aplikacje</option>
-                        </select>
-                    </div>
-                </aside>
-                <!-- Prawy panel z treścią zgłoszenia -->
-                <div class="modal-details-panel">
-                    <div id="modal-meta-info" class="modal-meta-info">
-                        <!-- Informacje o zgłoszeniu będą wstrzykiwane tutaj -->
-                    </div>
-                    <h4>Treść zgłoszenia:</h4>
-                    <p id="modal-content-text"></p>
-                    <h4>Załączniki:</h4>
-                    <div id="modal-attachments"></div>
-
-                     <!-- Sekcja komentarzy -->
-                    <div class="comments-section">
-                        <h4>Historia zgłoszenia</h4>
-                        <div id="comments-list" class="comments-list">
-                            <!-- Komentarze będą wstrzykiwane tutaj -->
-                        </div>
-                        <form id="comment-form" class="comment-form hidden">
-                            <textarea id="comment-input" placeholder="Dodaj komentarz..."></textarea>
-                            <button type="submit" class="btn btn-primary">Dodaj</button>
-                        </form>
-                    </div>
-                </div>
+                <!-- Struktura zostanie wstrzyknięta przez JS -->
             </div>
             <p id="modal-status" class="modal-status hidden"></p>
         </div>
@@ -371,7 +331,6 @@
             currentTicketData = null;
             pendingChanges = {};
             document.getElementById('modal-status').classList.add('hidden');
-            document.getElementById('comment-input').value = '';
             startAutoRefresh();
         }
 
@@ -479,10 +438,12 @@
         }
         
         function addModalEventListeners() {
-            document.getElementById('modal-close-btn').onclick = closeModal;
-            document.getElementById('modal-save-btn').onclick = saveChanges;
+            // Użycie querySelector, aby mieć pewność, że odwołujemy się do elementów wewnątrz świeżo wyrenderowanego modala
+            const modal = document.getElementById('ticket-modal');
+            modal.querySelector('#modal-close-btn').onclick = closeModal;
+            modal.querySelector('#modal-save-btn').onclick = saveChanges;
 
-            document.querySelectorAll('.btn-action').forEach(btn => {
+            modal.querySelectorAll('.btn-action').forEach(btn => {
                 btn.onclick = (e) => {
                     const action = e.target.dataset.action;
                     if (action === 'close-ticket') {
@@ -495,26 +456,26 @@
                             pendingChanges.assignedTo = { person: currentUserDetails.userDetails };
                         }
                         
-                        document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
-                        document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
+                        modal.querySelector('#modal-status').textContent = 'Zmiany oczekują na zapisanie.';
+                        modal.querySelector('#modal-status').classList.remove('hidden', 'success', 'error');
                     }
                 };
             });
             
-            document.getElementById('category-select').onchange = (e) => {
+            modal.querySelector('#category-select').onchange = (e) => {
                 pendingChanges.category = e.target.value;
-                document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
-                document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
+                modal.querySelector('#modal-status').textContent = 'Zmiany oczekują na zapisanie.';
+                modal.querySelector('#modal-status').classList.remove('hidden', 'success', 'error');
             };
             
-            document.getElementById('comment-form').onsubmit = (e) => {
+            modal.querySelector('#comment-form').onsubmit = (e) => {
                 e.preventDefault();
-                const commentInput = document.getElementById('comment-input');
+                const commentInput = modal.querySelector('#comment-input');
                 if(commentInput.value.trim()){
                     pendingChanges.newComment = { text: commentInput.value.trim() };
                     commentInput.value = '';
-                    document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
-                    document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
+                    modal.querySelector('#modal-status').textContent = 'Zmiany oczekują na zapisanie.';
+                    modal.querySelector('#modal-status').classList.remove('hidden', 'success', 'error');
                 }
             };
         }
