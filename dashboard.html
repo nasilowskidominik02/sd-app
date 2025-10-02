@@ -220,11 +220,11 @@
                 tickets.forEach(ticket => {
                     const row = tbody.insertRow();
                     row.className = 'ticket-row';
-                    row.dataset.ticketId = ticket.id; // Używamy dataset do przechowywania ID
+                    row.dataset.ticketId = ticket.id;
                     row.onclick = () => openTicketModal(ticket.id);
 
                     const statusClass = `status-${ticket.status.toLowerCase().replace(/\s/g, '-')}`;
-                    const closedDate = ['Rozwiązane', 'Odrzucone'].includes(ticket.status) && ticket.dates.closedAt ? new Date(ticket.dates.closedAt).toLocaleString('pl-PL') : '---';
+                    const closedDate = ['Rozwiązane', 'Odrzucone', 'Zamknięte'].includes(ticket.status) && ticket.dates.closedAt ? new Date(ticket.dates.closedAt).toLocaleString('pl-PL') : '---';
 
                     row.innerHTML = `
                         <td>${escapeHTML(ticket.id)}</td>
@@ -251,7 +251,7 @@
             const modal = document.getElementById('ticket-modal');
             modal.classList.remove('hidden');
             document.getElementById('modal-body').innerHTML = '<p class="loading-message">Ładowanie szczegółów...</p>';
-            clearInterval(refreshInterval); // Zatrzymaj odświeżanie w tle
+            clearInterval(refreshInterval);
 
             try {
                 const response = await fetch(`/api/getTicket?id=${ticketId}`);
@@ -352,23 +352,16 @@
                 commentsList.innerHTML = '<p>Brak komentarzy.</p>';
             }
 
+            // NOWA, POPRAWIONA LOGIKA WIDOCZNOŚCI
             const isServiceDesk = currentUserDetails.userRoles.includes('sd');
-            const isClosed = ['Rozwiązane', 'Odrzucone'].includes(ticket.status);
+            const isClosed = ['Rozwiązane', 'Odrzucone', 'Zamknięte'].includes(ticket.status);
+            const actionsPanel = document.getElementById('modal-actions-panel');
 
-            document.getElementById('modal-save-btn').classList.toggle('hidden', !isServiceDesk);
-            document.getElementById('modal-actions-panel').classList.toggle('hidden', !isServiceDesk);
-
-            if (isServiceDesk) {
-                document.querySelectorAll('#modal-actions-panel > *').forEach(el => {
-                    const action = el.dataset.action;
-                    if (action === 'open-ticket') {
-                        el.style.display = isClosed ? 'block' : 'none';
-                    } else {
-                        el.style.display = isClosed ? 'none' : 'block';
-                    }
-                });
-                document.getElementById('comment-form').classList.toggle('hidden', isClosed);
-            }
+            actionsPanel.classList.toggle('hidden', !isServiceDesk);
+            actionsPanel.classList.toggle('is-closed', isClosed); // Dodaj/usuń klasę sterującą
+            
+            document.getElementById('modal-save-btn').classList.toggle('hidden', !isServiceDesk || isClosed);
+            document.getElementById('comment-form').classList.toggle('hidden', !isServiceDesk || isClosed);
             
             document.getElementById('category-select').value = ticket.category;
             addModalEventListeners();
@@ -577,7 +570,6 @@
                 document.getElementById('closing-modal-close-btn').addEventListener('click', closeClosingModal);
                 document.getElementById('closing-form').addEventListener('submit', handleClosingFormSubmit);
                 
-                // Event do wyświetlania nazwy pliku
                 const closingFileInput = document.getElementById('closing-attachment-input');
                 const closingFileName = document.getElementById('closing-file-name');
                 closingFileInput.addEventListener('change', () => {
