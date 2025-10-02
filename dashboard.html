@@ -426,11 +426,9 @@
             }
             
             pendingChanges = {
-                status: form.elements.closingStatus.value,
-                newComment: {
-                    text: `Zgłoszenie zamknięte jako "${form.elements.closingStatus.value}": ${form.elements['closing-comment-input'].value}`,
-                    attachment: attachmentInfo ? { fileName: attachmentInfo.fileName, url: attachmentInfo.url } : null
-                }
+                status: form.elements.closingStatus.value, // Wysyłamy "Rozwiązane" lub "Odrzucone"
+                closingComment: `Zgłoszenie zamknięte jako "${form.elements.closingStatus.value}": ${form.elements['closing-comment-input'].value}`,
+                attachment: attachmentInfo ? { fileName: attachmentInfo.fileName, url: attachmentInfo.url } : null
             };
             
             await saveChanges();
@@ -440,11 +438,11 @@
         // POPRAWIONA, BARDZIEJ NIEZAWODNA FUNKCJA DO PODPINANIA EVENTÓW
         function addModalEventListeners() {
             const modal = document.getElementById('ticket-modal');
-            modal.querySelector('#modal-close-btn').onclick = closeModal;
-            modal.querySelector('#modal-save-btn').onclick = saveChanges;
+            modal.querySelector('#modal-close-btn').addEventListener('click', closeModal);
+            modal.querySelector('#modal-save-btn').addEventListener('click', saveChanges);
 
             modal.querySelectorAll('.btn-action').forEach(btn => {
-                btn.onclick = (e) => {
+                btn.addEventListener('click', (e) => {
                     const action = e.target.dataset.action;
                     if (action === 'close-ticket') {
                         openClosingModal();
@@ -459,16 +457,16 @@
                         modal.querySelector('#modal-status').textContent = 'Zmiany oczekują na zapisanie.';
                         modal.querySelector('#modal-status').classList.remove('hidden', 'success', 'error');
                     }
-                };
+                });
             });
             
-            modal.querySelector('#category-select').onchange = (e) => {
+            modal.querySelector('#category-select').addEventListener('change', (e) => {
                 pendingChanges.category = e.target.value;
                 modal.querySelector('#modal-status').textContent = 'Zmiany oczekują na zapisanie.';
                 modal.querySelector('#modal-status').classList.remove('hidden', 'success', 'error');
-            };
+            });
             
-            modal.querySelector('#comment-form').onsubmit = (e) => {
+            modal.querySelector('#comment-form').addEventListener('submit', (e) => {
                 e.preventDefault();
                 const commentInput = modal.querySelector('#comment-input');
                 if(commentInput.value.trim()){
@@ -477,7 +475,7 @@
                     modal.querySelector('#modal-status').textContent = 'Zmiany oczekują na zapisanie.';
                     modal.querySelector('#modal-status').classList.remove('hidden', 'success', 'error');
                 }
-            };
+            });
         }
 
         function startAutoRefresh() {

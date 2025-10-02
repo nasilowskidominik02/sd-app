@@ -48,7 +48,6 @@ module.exports = async function (context, req) {
         const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
         const container = client.database("ServiceDeskDB").container("Tickets");
 
-        // KROK 1: Niezawodnie znajdź zgłoszenie po ID, używając zapytania
         const querySpec = {
             query: "SELECT * FROM c WHERE c.id = @ticketId",
             parameters: [{ name: "@ticketId", value: ticketId }]
@@ -59,14 +58,13 @@ module.exports = async function (context, req) {
             return { status: 404, body: { message: "Ticket not found." } };
         }
         let ticket = items[0];
-        const originalCategory = ticket.category; // Zapisz oryginalną kategorię do późniejszego porównania
+        const originalCategory = ticket.category;
 
-        // KROK 2: Zastosuj zmiany w zależności od statusu zgłoszenia
-        const isClosed = ['Rozwiązane', 'Odrzucone'].includes(ticket.status);
-        if (isClosed) {
+        // Logika sprawdzająca status zgłoszenia
+        if (ticket.status === 'Zamknięte') {
             const isReopening = changes.status && changes.status === 'Otwarte';
             if (isReopening) {
-                 addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "Otwarte".`, clientPrincipal);
+                 addSystemComment(ticket, `Zmieniono status z "Zamknięte" na "Otwarte".`, clientPrincipal);
                  ticket.status = 'Otwarte';
                  ticket.dates.closedAt = null;
             } else {
@@ -75,10 +73,17 @@ module.exports = async function (context, req) {
         } else {
             // Standardowa logika dla otwartych zgłoszeń
             if (changes.status && ticket.status !== changes.status) {
-                addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "${changes.status}".`, clientPrincipal);
-                ticket.status = changes.status;
+                 // Jeśli zmiana statusu to zamknięcie (Rozwiązane/Odrzucone), ustawiamy nadrzędny status "Zamknięte"
                 if (['Rozwiązane', 'Odrzucone'].includes(changes.status)) {
+                    addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "Zamknięte".`, clientPrincipal);
+                    ticket.status = 'Zamknięte'; // Ustawiamy status nadrzędny
                     ticket.dates.closedAt = new Date().toISOString();
+                    if (changes.closingComment) {
+                         addSystemComment(ticket, changes.closingComment, clientPrincipal);
+                    }
+                } else { // Dla innych zmian statusu (np. na "Otwarte")
+                    addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "${changes.status}".`, clientPrincipal);
+                    ticket.status = changes.status;
                 }
             }
 
@@ -113,14 +118,11 @@ module.exports = async function (context, req) {
             }
         }
         
-        // KROK 3: Zapisz zmiany, obsługując poprawnie zmianę klucza partycji
         if (ticket.category !== originalCategory) {
-            // Jeśli kategoria (klucz partycji) się zmieniła, musimy usunąć stary dokument i stworzyć nowy
             const { resource: createdItem } = await container.items.create(ticket);
             await container.item(ticketId, originalCategory).delete();
             context.res = { body: createdItem };
         } else {
-            // Standardowa aktualizacja w obrębie tej samej partycji
             const { resource: updatedItem } = await container.items.upsert(ticket);
             context.res = { body: updatedItem };
         }

@@ -12,8 +12,6 @@
     --status-nieprzeczytane: #ffc107; /* Amber */
     --status-otwarte: #28a745; /* Green */
     --status-zamknięte: #6c757d; /* Gray */
-    --status-rozwiazane: #007bff; /* Bright Blue for Resolved */
-    --status-odrzucone: #dc3545; /* Red for Rejected */
     --border-radius: 8px;
     --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
 }
@@ -261,8 +259,6 @@ a:hover {
 .status-badge.status-nieprzeczytane { background-color: var(--status-nieprzeczytane); }
 .status-badge.status-otwarte { background-color: var(--status-otwarte); }
 .status-badge.status-zamknięte { background-color: var(--status-zamknięte); }
-.status-badge.status-rozwiazane { background-color: var(--status-rozwiazane); }
-.status-badge.status-odrzucone { background-color: var(--status-odrzucone); }
 
 /* --- Pagination --- */
 .pagination {
