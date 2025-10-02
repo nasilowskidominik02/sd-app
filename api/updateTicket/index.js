@@ -12,7 +12,7 @@ const categoryToGroupMap = {
 };
 
 /**
- * Helper function to add a system comment to the ticket's history.
+ * Funkcja pomocnicza do dodawania komentarza systemowego do historii zgłoszenia.
  */
 function addSystemComment(ticket, text, clientPrincipal) {
     if (!ticket.comments) {
@@ -48,6 +48,7 @@ module.exports = async function (context, req) {
         const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
         const container = client.database("ServiceDeskDB").container("Tickets");
 
+        // KROK 1: Niezawodnie znajdź zgłoszenie po ID, używając zapytania
         const querySpec = {
             query: "SELECT * FROM c WHERE c.id = @ticketId",
             parameters: [{ name: "@ticketId", value: ticketId }]
@@ -58,22 +59,17 @@ module.exports = async function (context, req) {
             return { status: 404, body: { message: "Ticket not found." } };
         }
         let ticket = items[0];
-        const originalCategory = ticket.category;
+        const originalCategory = ticket.category; // Zapisz oryginalną kategorię do późniejszego porównania
 
-        // Logika sprawdzająca status zgłoszenia
-        if (ticket.status === 'Zamknięte') {
+        // KROK 2: Zastosuj zmiany w zależności od statusu zgłoszenia
+        const isClosed = ['Rozwiązane', 'Odrzucone'].includes(ticket.status);
+        if (isClosed) {
             const isReopening = changes.status && changes.status === 'Otwarte';
-            // Sprawdzamy, czy obiekt `changes` ma tylko jeden klucz (`status`) lub dwa (jeśli jest też closingComment)
-            const allowedKeys = ['status', 'closingComment'];
-            const changeKeys = Object.keys(changes);
-            const onlyAllowedChanges = changeKeys.every(key => allowedKeys.includes(key)) && changeKeys.length <= allowedKeys.length;
-
-            if (isReopening && onlyAllowedChanges) {
-                 addSystemComment(ticket, `Zmieniono status z "Zamknięte" na "Otwarte".`, clientPrincipal);
+            if (isReopening) {
+                 addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "Otwarte".`, clientPrincipal);
                  ticket.status = 'Otwarte';
                  ticket.dates.closedAt = null;
             } else {
-                // Zmieniony komunikat błędu zgodnie z prośbą
                 return { status: 403, body: { message: "Zgłoszenie musi mieć status 'Otwarte', aby można było je modyfikować." } };
             }
         } else {
@@ -81,11 +77,8 @@ module.exports = async function (context, req) {
             if (changes.status && ticket.status !== changes.status) {
                 addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "${changes.status}".`, clientPrincipal);
                 ticket.status = changes.status;
-                if (changes.status === 'Zamknięte') {
+                if (['Rozwiązane', 'Odrzucone'].includes(changes.status)) {
                     ticket.dates.closedAt = new Date().toISOString();
-                    if (changes.closingComment) {
-                         addSystemComment(ticket, `Komentarz zamknięcia: ${changes.closingComment}`, clientPrincipal);
-                    }
                 }
             }
 
@@ -114,16 +107,20 @@ module.exports = async function (context, req) {
                  ticket.comments.push({
                     author: clientPrincipal.userDetails,
                     text: changes.newComment.text,
-                    timestamp: new Date().toISOString()
+                    timestamp: new Date().toISOString(),
+                    attachment: changes.newComment.attachment || null
                 });
             }
         }
         
+        // KROK 3: Zapisz zmiany, obsługując poprawnie zmianę klucza partycji
         if (ticket.category !== originalCategory) {
+            // Jeśli kategoria (klucz partycji) się zmieniła, musimy usunąć stary dokument i stworzyć nowy
             const { resource: createdItem } = await container.items.create(ticket);
             await container.item(ticketId, originalCategory).delete();
             context.res = { body: createdItem };
         } else {
+            // Standardowa aktualizacja w obrębie tej samej partycji
             const { resource: updatedItem } = await container.items.upsert(ticket);
             context.res = { body: updatedItem };
         }
