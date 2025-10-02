@@ -213,6 +213,7 @@
         async function openTicketModal(ticketId) {
             const modal = document.getElementById('ticket-modal');
             modal.classList.remove('hidden');
+            document.getElementById('modal-body').innerHTML = '<p>Ładowanie szczegółów...</p>';
 
             try {
                 const response = await fetch(`/api/getTicket?id=${ticketId}`);
@@ -226,6 +227,44 @@
         }
         
         function populateModal(ticket) {
+            const modalBody = document.getElementById('modal-body');
+            // Przywróć oryginalną strukturę HTML, jeśli została zmieniona przez komunikat o błędzie
+            modalBody.innerHTML = `
+                <aside id="modal-actions-panel" class="modal-actions-panel hidden">
+                    <h4>Akcje</h4>
+                    <button class="btn-action" data-action="close-ticket">Zamknij zgłoszenie</button>
+                    <button class="btn-action" data-action="open-ticket">Ustaw jako otwarte</button>
+                    <button class="btn-action" data-action="assign-tome">Przypisz do mnie</button>
+                    <div class="form-group">
+                        <label for="category-select">Zmień kategorię</label>
+                        <select id="category-select" class="form-control">
+                            <option value="Inne">Inne</option>
+                            <option value="Instalacja oprogramowania">Instalacja oprogramowania</option>
+                            <option value="Konfiguracja oprogramowania">Konfiguracja oprogramowania</option>
+                            <option value="Hardware">Hardware</option>
+                            <option value="Infrastruktura">Infrastruktura</option>
+                            <option value="Konto">Konto</option>
+                            <option value="Aplikacje">Aplikacje</option>
+                        </select>
+                    </div>
+                </aside>
+                <div class="modal-details-panel">
+                    <div id="modal-meta-info"></div>
+                    <h4>Treść zgłoszenia:</h4>
+                    <p id="modal-content-text"></p>
+                    <h4>Załączniki:</h4>
+                    <div id="modal-attachments"></div>
+                    <div class="comments-section">
+                        <h4>Historia zgłoszenia</h4>
+                        <div id="comments-list" class="comments-list"></div>
+                        <form id="comment-form" class="comment-form hidden">
+                            <textarea id="comment-input" placeholder="Dodaj komentarz..."></textarea>
+                            <button type="submit" class="btn btn-primary">Dodaj</button>
+                        </form>
+                    </div>
+                </div>
+            `;
+            
             document.getElementById('modal-title').innerText = `Zgłoszenie: ${ticket.id}`;
             document.getElementById('modal-content-text').innerText = ticket.content;
             
@@ -271,11 +310,29 @@
                 commentsList.innerHTML = '<p>Brak komentarzy.</p>';
             }
 
+            // NOWA LOGIKA: Zarządzanie widocznością kontrolek
             const isServiceDesk = currentUserDetails.userRoles.includes('sd');
-            document.getElementById('modal-actions-panel').classList.toggle('hidden', !isServiceDesk);
+            const isClosed = ticket.status === 'Zamknięte';
+
             document.getElementById('modal-save-btn').classList.toggle('hidden', !isServiceDesk);
-            document.getElementById('comment-form').classList.toggle('hidden', !isServiceDesk);
+            document.getElementById('modal-actions-panel').classList.toggle('hidden', !isServiceDesk);
+
+            if (isServiceDesk) {
+                const actions = document.querySelectorAll('#modal-actions-panel .btn-action, #modal-actions-panel select');
+                actions.forEach(action => {
+                    if (action.dataset.action === 'open-ticket') {
+                        action.style.display = isClosed ? 'block' : 'none';
+                    } else {
+                        action.style.display = isClosed ? 'none' : 'block';
+                    }
+                });
+                // Ukryj również label dla kategorii, jeśli jest zablokowana
+                document.querySelector('label[for="category-select"]').style.display = isClosed ? 'none' : 'block';
+                document.getElementById('comment-form').classList.toggle('hidden', isClosed);
+            }
+
             document.getElementById('category-select').value = ticket.category;
+            addModalEventListeners(); // Ponowne podpięcie eventów
         }
 
         function closeModal() {
@@ -307,8 +364,8 @@
                 });
 
                 if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`Błąd serwera: ${errorText}`);
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
                 }
                 
                 const updatedTicket = await response.json();
@@ -329,6 +386,49 @@
                  statusEl.textContent = 'Błąd: ' + error.message;
                  statusEl.classList.add('error');
             }
+        }
+
+        function addModalEventListeners() {
+            // Eventy podpinane są raz, ale musimy je wywołać po odtworzeniu HTML
+            document.getElementById('modal-close-btn').onclick = closeModal;
+            document.getElementById('modal-save-btn').onclick = saveChanges;
+
+            document.querySelectorAll('.btn-action').forEach(btn => {
+                btn.onclick = (e) => {
+                    const action = e.target.dataset.action;
+                    if (action === 'close-ticket') {
+                        const reason = prompt("Wprowadź komentarz zamknięcia zgłoszenia:");
+                        if(reason && reason.trim()) {
+                            pendingChanges.status = 'Zamknięte';
+                            pendingChanges.closingComment = reason.trim();
+                        } else {
+                            return; 
+                        }
+                    }
+                    if (action === 'open-ticket') pendingChanges.status = 'Otwarte';
+                    if (action === 'assign-tome') pendingChanges.assignedTo = { person: currentUserDetails.userDetails };
+                    
+                    document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
+                    document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
+                };
+            });
+            
+            document.getElementById('category-select').onchange = (e) => {
+                pendingChanges.category = e.target.value;
+                document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
+                document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
+            };
+            
+            document.getElementById('comment-form').onsubmit = (e) => {
+                e.preventDefault();
+                const commentInput = document.getElementById('comment-input');
+                if(commentInput.value.trim()){
+                    pendingChanges.newComment = { text: commentInput.value.trim() };
+                    commentInput.value = '';
+                    document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
+                    document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
+                }
+            };
         }
 
         // --- Inicjalizacja strony ---
@@ -354,9 +454,7 @@
                 loadTickets();
                 setInterval(() => loadTickets(document.getElementById('search-input').value), 60000);
 
-                // Podpięcie eventów
-                document.getElementById('modal-close-btn').addEventListener('click', closeModal);
-                document.getElementById('modal-save-btn').addEventListener('click', saveChanges);
+                // Główne eventy strony
                 document.getElementById('search-btn').addEventListener('click', () => {
                     currentPage = 1;
                     loadTickets(document.getElementById('search-input').value);
@@ -367,45 +465,6 @@
                         loadTickets(document.getElementById('search-input').value);
                     }
                 });
-
-                document.querySelectorAll('.btn-action').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
-                        const action = e.target.dataset.action;
-                        if (action === 'close-ticket') {
-                            const reason = prompt("Wprowadź komentarz zamknięcia zgłoszenia:");
-                            if(reason) {
-                                pendingChanges.status = 'Zamknięte';
-                                pendingChanges.closingComment = reason;
-                            } else {
-                                return; // Anuluj, jeśli użytkownik nie wpisał powodu
-                            }
-                        }
-                        if (action === 'open-ticket') pendingChanges.status = 'Otwarte';
-                        if (action === 'assign-tome') pendingChanges.assignedTo = { person: currentUserDetails.userDetails };
-                        
-                        document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
-                        document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
-                    });
-                });
-                
-                document.getElementById('category-select').addEventListener('change', (e) => {
-                    pendingChanges.category = e.target.value;
-                    document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
-                    document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
-                });
-                
-                document.getElementById('comment-form').addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    const commentInput = document.getElementById('comment-input');
-                    if(commentInput.value.trim()){
-                        pendingChanges.newComment = { text: commentInput.value.trim() };
-                        commentInput.value = '';
-                        document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
-                        document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
-                    }
-                });
-
-
             } catch (error) {
                 console.error('Błąd inicjalizacji panelu:', error);
                  window.location.href = 'index.html';
