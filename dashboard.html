@@ -437,13 +437,14 @@
             closeClosingModal();
         }
         
+        // POPRAWIONA, BARDZIEJ NIEZAWODNA FUNKCJA DO PODPINANIA EVENTÓW
         function addModalEventListeners() {
             const modal = document.getElementById('ticket-modal');
-            modal.querySelector('#modal-close-btn').addEventListener('click', closeModal);
-            modal.querySelector('#modal-save-btn').addEventListener('click', saveChanges);
+            modal.querySelector('#modal-close-btn').onclick = closeModal;
+            modal.querySelector('#modal-save-btn').onclick = saveChanges;
 
             modal.querySelectorAll('.btn-action').forEach(btn => {
-                btn.addEventListener('click', (e) => {
+                btn.onclick = (e) => {
                     const action = e.target.dataset.action;
                     if (action === 'close-ticket') {
                         openClosingModal();
@@ -458,16 +459,16 @@
                         modal.querySelector('#modal-status').textContent = 'Zmiany oczekują na zapisanie.';
                         modal.querySelector('#modal-status').classList.remove('hidden', 'success', 'error');
                     }
-                });
+                };
             });
             
-            modal.querySelector('#category-select').addEventListener('change', (e) => {
+            modal.querySelector('#category-select').onchange = (e) => {
                 pendingChanges.category = e.target.value;
                 modal.querySelector('#modal-status').textContent = 'Zmiany oczekują na zapisanie.';
                 modal.querySelector('#modal-status').classList.remove('hidden', 'success', 'error');
-            });
+            };
             
-            modal.querySelector('#comment-form').addEventListener('submit', (e) => {
+            modal.querySelector('#comment-form').onsubmit = (e) => {
                 e.preventDefault();
                 const commentInput = modal.querySelector('#comment-input');
                 if(commentInput.value.trim()){
@@ -476,7 +477,7 @@
                     modal.querySelector('#modal-status').textContent = 'Zmiany oczekują na zapisanie.';
                     modal.querySelector('#modal-status').classList.remove('hidden', 'success', 'error');
                 }
-            });
+            };
         }
 
         function startAutoRefresh() {
