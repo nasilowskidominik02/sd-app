@@ -155,7 +155,11 @@
                 </div>
                 <div class="form-group">
                     <label for="closing-attachment-input">Załącznik (opcjonalnie)</label>
-                    <input type="file" id="closing-attachment-input" class="file-input">
+                    <div class="file-input-wrapper">
+                        <label for="closing-attachment-input" class="file-input-label">Wybierz plik</label>
+                        <input type="file" id="closing-attachment-input" class="file-input">
+                    </div>
+                    <div id="closing-file-name"></div>
                 </div>
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">Potwierdź zamknięcie</button>
@@ -376,7 +380,6 @@
             pendingChanges = {};
             document.getElementById('modal-status').classList.add('hidden');
             document.getElementById('comment-input').value = '';
-            // Wznów odświeżanie w tle
             startAutoRefresh();
         }
 
@@ -405,7 +408,6 @@
                 }
                 
                 const updatedTicket = await response.json();
-
                 statusEl.textContent = 'Zmiany zapisane pomyślnie!';
                 statusEl.classList.add('success');
                 
@@ -433,6 +435,7 @@
             modal.classList.add('hidden');
             document.getElementById('closing-form').reset();
             document.getElementById('closing-modal-status').classList.add('hidden');
+            document.getElementById('closing-file-name').textContent = '';
         }
 
         async function handleClosingFormSubmit(event) {
@@ -522,9 +525,8 @@
         }
 
         function startAutoRefresh() {
-             clearInterval(refreshInterval); // Wyczyść stary interwał na wszelki wypadek
+             clearInterval(refreshInterval);
              refreshInterval = setInterval(() => {
-                // Odświeżaj tylko jeśli żadne okno modalne nie jest otwarte
                 if (document.getElementById('ticket-modal').classList.contains('hidden') && 
                     document.getElementById('closing-modal').classList.contains('hidden')) {
                     loadTickets(document.getElementById('search-input').value);
@@ -537,7 +539,6 @@
             try {
                 const response = await fetch('/.auth/me');
                 if (response.status === 401) {
-                    // Jeśli sesja wygasła lub użytkownik nie jest zalogowany, przekieruj
                     window.location.href = '/index.html';
                     return;
                 }
@@ -575,11 +576,21 @@
                 // Eventy dla nowego modala zamykania
                 document.getElementById('closing-modal-close-btn').addEventListener('click', closeClosingModal);
                 document.getElementById('closing-form').addEventListener('submit', handleClosingFormSubmit);
+                
+                // Event do wyświetlania nazwy pliku
+                const closingFileInput = document.getElementById('closing-attachment-input');
+                const closingFileName = document.getElementById('closing-file-name');
+                closingFileInput.addEventListener('change', () => {
+                    if (closingFileInput.files.length > 0) {
+                        closingFileName.textContent = `Wybrano plik: ${closingFileInput.files[0].name}`;
+                    } else {
+                        closingFileName.textContent = '';
+                    }
+                });
+
 
             } catch (error) {
                 console.error('Błąd inicjalizacji panelu:', error);
-                 // W przypadku błędu (np. problem z siecią), unikamy pętli przekierowań
-                 // Można tu wyświetlić komunikat o błędzie na stronie, zamiast przekierowywać.
             }
         }
 
