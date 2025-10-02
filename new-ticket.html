@@ -41,20 +41,24 @@
                 <form id="new-ticket-form" class="form-container">
                     <div class="form-group">
                         <label for="title">Tytuł zgłoszenia</label>
-                        <input type="text" id="title" class="form-control" name="title" required>
+                        <input type="text" id="title" name="title" class="form-control" required>
                     </div>
                     <div class="form-group">
                         <label for="content">Treść zgłoszenia</label>
-                        <textarea id="content" class="form-control" name="content" rows="10" required></textarea>
+                        <textarea id="content" name="content" class="form-control" rows="10" required></textarea>
                     </div>
                      <div class="form-group">
                         <label for="attachment">Załącznik (opcjonalnie)</label>
-                        <input type="file" id="attachment" name="attachment" class="file-input">
+                        <div class="file-input-wrapper">
+                            <label for="attachment" class="file-input-label">Wybierz plik</label>
+                            <input type="file" id="attachment" name="attachment" class="file-input">
+                        </div>
+                        <div id="file-name" class="upload-feedback"></div>
                     </div>
                     
                     <div class="form-actions">
-                         <button type="submit" class="btn-submit">Wyślij zgłoszenie</button>
-                         <p id="form-status" class="hidden"></p>
+                         <button type="submit" class="btn btn-primary">Wyślij zgłoszenie</button>
+                         <p id="form-status" class="form-status hidden"></p>
                     </div>
                 </form>
 
@@ -68,16 +72,6 @@
     </div>
     
     <script>
-        // Helper function to convert file to Base64
-        function fileToBase64(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = error => reject(error);
-            });
-        }
-
         async function initializePage() {
             try {
                 const response = await fetch('/.auth/me');
@@ -108,34 +102,33 @@
             const statusMessage = document.getElementById('form-status');
 
             submitButton.disabled = true;
-            statusMessage.textContent = 'Przygotowywanie danych...';
+            statusMessage.textContent = 'Przetwarzanie...';
             statusMessage.classList.remove('hidden', 'success', 'error');
 
             let attachmentInfo = null;
             const fileInput = form.elements.attachment;
 
-            // Krok 1: Prześlij plik, jeśli został wybrany (NOWA METODA)
+            // Krok 1: Prześlij plik, jeśli został wybrany
             if (fileInput.files.length > 0) {
-                statusMessage.textContent = 'Przetwarzanie załącznika...';
+                statusMessage.textContent = 'Przesyłanie załącznika...';
                 const file = fileInput.files[0];
                 
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                // Czekamy, aż plik zostanie w pełni wczytany do pamięci jako Base64
+                await new Promise(resolve => reader.onload = resolve);
+
                 try {
-                    const base64File = await fileToBase64(file);
-                    
-                    statusMessage.textContent = 'Przesyłanie załącznika...';
                     const uploadResponse = await fetch('/api/uploadAttachment', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            fileName: file.name,
-                            fileContent: base64File // Wysyłamy zakodowany plik
-                        })
+                        body: JSON.stringify({ fileName: file.name, fileContent: reader.result })
                     });
 
                     if (!uploadResponse.ok) {
                         throw new Error('Błąd podczas przesyłania pliku. Spróbuj ponownie.');
                     }
-                    attachmentInfo = await uploadResponse.json(); // Oczekujemy { fileName, url }
+                    attachmentInfo = await uploadResponse.json(); 
                 } catch (error) {
                     statusMessage.textContent = `Błąd: ${error.message}`;
                     statusMessage.classList.add('error');
@@ -181,6 +174,18 @@
 
         initializePage();
         document.getElementById('new-ticket-form').addEventListener('submit', handleFormSubmit);
+
+        // Event do wyświetlania nazwy wybranego pliku
+        const fileInput = document.getElementById('attachment');
+        const fileNameDisplay = document.getElementById('file-name');
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length > 0) {
+                fileNameDisplay.textContent = `Wybrano plik: ${fileInput.files[0].name}`;
+            } else {
+                fileNameDisplay.textContent = '';
+            }
+        });
+
     </script>
 </body>
 </html>
