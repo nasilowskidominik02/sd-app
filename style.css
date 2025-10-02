@@ -495,24 +495,16 @@ textarea.form-control {
     border-radius: var(--border-radius);
     cursor: pointer;
 }
-
 .btn-action:hover {
     background-color: var(--medium-gray-bg);
 }
 
 /* POPRAWIONA LOGIKA WIDOCZNOŚCI PRZYCISKÓW */
-/* Domyślnie dla otwartego zgłoszenia, pokazujemy wszystko oprócz przycisku "Otwórz" */
-.modal-actions-panel:not(.is-closed) .btn-action,
-.modal-actions-panel:not(.is-closed) .form-group {
-    display: block;
-}
-.modal-actions-panel:not(.is-closed) .btn-action[data-action="open-ticket"] {
-    display: none;
-}
-
-/* Dla zamkniętego zgłoszenia, ukrywamy wszystko oprócz przycisku "Otwórz" */
 .modal-actions-panel.is-closed .btn-action:not([data-action="open-ticket"]),
 .modal-actions-panel.is-closed .form-group {
+    display: none;
+}
+.modal-actions-panel:not(.is-closed) .btn-action[data-action="open-ticket"] {
     display: none;
 }
 .modal-actions-panel.is-closed .btn-action[data-action="open-ticket"] {
@@ -522,9 +514,15 @@ textarea.form-control {
 
 .modal-details-panel {
     flex-grow: 1;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
+
 .modal-meta-info {
     margin-bottom: 24px;
+    flex-shrink: 0;
 }
 
 .modal-meta-info p {
@@ -534,6 +532,7 @@ textarea.form-control {
 .modal-details-panel h4 {
     margin-top: 24px;
     margin-bottom: 8px;
+    flex-shrink: 0;
 }
 
 .modal-status {
@@ -560,12 +559,19 @@ textarea.form-control {
 /* --- Comments Section --- */
 .comments-section {
     margin-top: 32px;
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    min-height: 0; /* Ważne dla flexbox */
 }
 .comments-list {
+    flex-grow: 1;
+    overflow-y: auto; /* Włącza scrollowanie tylko dla listy komentarzy */
     display: flex;
     flex-direction: column;
     gap: 16px;
     margin-bottom: 24px;
+    padding-right: 10px; /* Dodatkowy padding, żeby scrollbar nie nachodził na treść */
 }
 
 .comment {
@@ -594,6 +600,7 @@ textarea.form-control {
 
 .comment-text {
     line-height: 1.6;
+    word-break: break-word;
 }
 
 .comment.system-comment .comment-text {
@@ -607,6 +614,11 @@ textarea.form-control {
     background-color: var(--light-gray-bg);
     border-radius: var(--border-radius);
     border: 1px solid var(--gray-border);
+}
+
+.comment-form {
+    margin-top: auto; /* Przykleja formularz na dole */
+    flex-shrink: 0;
 }
 
 .comment-form textarea {
@@ -634,3 +646,4 @@ textarea.form-control {
     gap: 8px;
     cursor: pointer;
 }
+
