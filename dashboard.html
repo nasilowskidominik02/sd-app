@@ -360,7 +360,6 @@
             actionsPanel.classList.toggle('is-closed', isClosed);
             
             document.getElementById('modal-save-btn').classList.toggle('hidden', !isServiceDesk);
-
             document.getElementById('comment-form').classList.toggle('hidden', !isServiceDesk || isClosed);
             
             document.getElementById('category-select').value = ticket.category;
@@ -488,7 +487,7 @@
                     const action = e.target.dataset.action;
                     if (action === 'close-ticket') {
                         openClosingModal();
-                    } else { // Dla wszystkich innych akcji
+                    } else {
                         if (action === 'open-ticket') {
                             pendingChanges.status = 'Otwarte';
                         }

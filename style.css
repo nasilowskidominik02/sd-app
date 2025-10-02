@@ -495,14 +495,22 @@ textarea.form-control {
     border-radius: var(--border-radius);
     cursor: pointer;
 }
+
 .btn-action:hover {
     background-color: var(--medium-gray-bg);
 }
 
 /* POPRAWIONA LOGIKA WIDOCZNOŚCI PRZYCISKÓW */
+/* Domyślnie dla otwartego zgłoszenia, pokazujemy wszystko oprócz przycisku "Otwórz" */
+.modal-actions-panel:not(.is-closed) .btn-action,
+.modal-actions-panel:not(.is-closed) .form-group {
+    display: block;
+}
 .modal-actions-panel:not(.is-closed) .btn-action[data-action="open-ticket"] {
     display: none;
 }
+
+/* Dla zamkniętego zgłoszenia, ukrywamy wszystko oprócz przycisku "Otwórz" */
 .modal-actions-panel.is-closed .btn-action:not([data-action="open-ticket"]),
 .modal-actions-panel.is-closed .form-group {
     display: none;
@@ -514,10 +522,7 @@ textarea.form-control {
 
 .modal-details-panel {
     flex-grow: 1;
-    padding: 24px;
-    overflow-y: auto;
 }
-
 .modal-meta-info {
     margin-bottom: 24px;
 }
@@ -629,4 +634,3 @@ textarea.form-control {
     gap: 8px;
     cursor: pointer;
 }
-
