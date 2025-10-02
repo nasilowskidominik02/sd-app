@@ -359,7 +359,6 @@
             actionsPanel.classList.toggle('hidden', !isServiceDesk);
             actionsPanel.classList.toggle('is-closed', isClosed);
             
-            // POPRAWIONA LOGIKA WIDOCZNOŚCI PRZYCISKU ZAPISU
             document.getElementById('modal-save-btn').classList.toggle('hidden', !isServiceDesk);
 
             document.getElementById('comment-form').classList.toggle('hidden', !isServiceDesk || isClosed);
@@ -489,17 +488,14 @@
                     const action = e.target.dataset.action;
                     if (action === 'close-ticket') {
                         openClosingModal();
-                    }
-                    if (action === 'open-ticket') {
-                        pendingChanges.status = 'Otwarte';
-                        // POPRAWKA: Pokaż przycisk zapisu po kliknięciu "Otwórz"
-                        document.getElementById('modal-save-btn').classList.remove('hidden');
-                    }
-                    if (action === 'assign-tome') {
-                        pendingChanges.assignedTo = { person: currentUserDetails.userDetails };
-                    }
-                    
-                    if(action !== 'close-ticket') {
+                    } else { // Dla wszystkich innych akcji
+                        if (action === 'open-ticket') {
+                            pendingChanges.status = 'Otwarte';
+                        }
+                        if (action === 'assign-tome') {
+                            pendingChanges.assignedTo = { person: currentUserDetails.userDetails };
+                        }
+                        
                         document.getElementById('modal-status').textContent = 'Zmiany oczekują na zapisanie.';
                         document.getElementById('modal-status').classList.remove('hidden', 'success', 'error');
                     }

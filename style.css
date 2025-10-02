@@ -499,18 +499,16 @@ textarea.form-control {
     background-color: var(--medium-gray-bg);
 }
 
-/* NOWA LOGIKA CSS DLA KONTROLEK W MODALU */
-.modal-actions-panel.is-closed .btn-action[data-action="open-ticket"] {
-    display: block; /* Pokaż tylko przycisk otwierania */
-}
-
+/* POPRAWIONA LOGIKA WIDOCZNOŚCI PRZYCISKÓW */
 .modal-actions-panel:not(.is-closed) .btn-action[data-action="open-ticket"] {
-    display: none; /* Ukryj przycisk otwierania dla otwartych zgłoszeń */
+    display: none;
 }
-
 .modal-actions-panel.is-closed .btn-action:not([data-action="open-ticket"]),
-#modal-actions-panel.is-closed .form-group {
-    display: none; /* Ukryj wszystkie inne akcje, gdy zgłoszenie jest zamknięte */
+.modal-actions-panel.is-closed .form-group {
+    display: none;
+}
+.modal-actions-panel.is-closed .btn-action[data-action="open-ticket"] {
+    display: block;
 }
 
 
