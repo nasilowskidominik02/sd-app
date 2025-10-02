@@ -48,33 +48,6 @@ a:hover {
     display: none !important;
 }
 
-.btn {
-    padding: 8px 16px;
-    border-radius: var(--border-radius);
-    border: 1px solid var(--gray-border);
-    cursor: pointer;
-    font-weight: 500;
-    background-color: var(--white);
-    transition: background-color 0.2s;
-}
-.btn:hover {
-    background-color: var(--light-gray-bg);
-}
-.btn-primary {
-    background-color: var(--primary-blue);
-    color: var(--white);
-    border-color: var(--primary-blue);
-}
-.btn-primary:hover {
-    background-color: var(--primary-blue-hover);
-}
-.btn-primary:disabled {
-    background-color: var(--gray-border);
-    border-color: var(--gray-border);
-    cursor: not-allowed;
-}
-
-
 /* --- App Layout --- */
 .app-layout {
     display: flex;
@@ -128,7 +101,6 @@ a:hover {
     justify-content: center;
     align-items: center;
     flex-grow: 1;
-    padding: 32px;
 }
 
 .sidebar {
@@ -137,7 +109,6 @@ a:hover {
     padding: 24px;
     border-right: 1px solid var(--gray-border);
     flex-shrink: 0;
-    overflow-y: auto;
 }
 
 .sidebar-nav {
@@ -163,6 +134,13 @@ a:hover {
     flex-grow: 1;
     padding: 32px;
     overflow-y: auto; /* Enable scroll only for main content */
+    display: flex;
+    flex-direction: column;
+}
+
+.main-content h1 {
+    font-size: 28px;
+    margin-bottom: 24px;
 }
 
 .toolbar {
@@ -170,11 +148,6 @@ a:hover {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 24px;
-}
-
-.toolbar h1 {
-    font-size: 28px;
-    margin: 0;
 }
 
 .search-container {
@@ -187,10 +160,6 @@ a:hover {
     border: 1px solid var(--gray-border);
     border-radius: var(--border-radius);
     min-width: 250px;
-}
-
-#search-btn {
-    padding: 8px 16px;
 }
 
 .app-footer {
@@ -212,10 +181,6 @@ a:hover {
     border-radius: var(--border-radius);
     box-shadow: var(--shadow);
     text-align: center;
-}
-
-.login-container h1 {
-    margin-bottom: 16px;
 }
 
 .login-instruction {
@@ -282,6 +247,7 @@ a:hover {
     background-color: #f9fafb;
 }
 
+
 .status-badge {
     display: inline-block;
     padding: 4px 12px;
@@ -297,7 +263,6 @@ a:hover {
 .status-badge.status-zamknięte { background-color: var(--status-zamknięte); }
 .status-badge.status-rozwiazane { background-color: var(--status-rozwiazane); }
 .status-badge.status-odrzucone { background-color: var(--status-odrzucone); }
-
 
 /* --- Pagination --- */
 .pagination {
@@ -360,41 +325,62 @@ textarea.form-control {
     display: inline-block;
     width: 100%;
 }
-.file-input {
-    position: absolute;
-    left: 0;
-    top: 0;
-    opacity: 0;
-    width: 100%;
-    height: 100%;
-    cursor: pointer;
-}
+
 .file-input-label {
-    display: block;
+    display: inline-block;
+    width: 100%;
     padding: 12px;
-    background-color: var(--white);
+    background-color: var(--light-gray-bg);
     border: 1px solid var(--gray-border);
     border-radius: var(--border-radius);
-    text-align: center;
     cursor: pointer;
+    text-align: center;
 }
-#file-name {
-    margin-top: 8px;
-    font-size: 14px;
-    color: var(--text-light);
-}
-
-.form-actions {
-    display: flex;
-    align-items: center;
-    gap: 16px;
+.file-input-label:hover {
+    background-color: var(--medium-gray-bg);
 }
 
-.form-status {
+.file-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+
+.btn-primary {
+    background-color: var(--primary-blue);
+    color: var(--white);
+    border: none;
+    padding: 12px 24px;
+    border-radius: var(--border-radius);
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.btn-primary:hover {
+    background-color: var(--primary-blue-hover);
+}
+
+.btn-primary:disabled {
+    background-color: var(--gray-border);
+    cursor: not-allowed;
+}
+
+.form-status, .upload-feedback {
+    margin-top: 16px;
     font-size: 14px;
 }
-.form-status.success { color: var(--status-otwarte); }
-.form-status.error { color: var(--danger-red); }
+.form-status.success { color: #155724; }
+.form-status.error { color: #721c24; }
+
 
 /* --- Unauthorized Page --- */
 .panel {
@@ -406,9 +392,25 @@ textarea.form-control {
     padding: 40px;
     text-align: center;
 }
-.panel h2 { font-size: 24px; font-weight: 600; margin-bottom: 16px; }
-.panel p { line-height: 1.6; margin-bottom: 24px; }
-.logout-button { background-color: var(--danger-red); color: var(--white); border: none; padding: 12px; border-radius: var(--border-radius); }
+
+.panel h2 {
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 16px;
+}
+
+.panel p {
+    line-height: 1.6;
+    margin-bottom: 24px;
+}
+
+.logout-button {
+    background-color: var(--danger-red);
+    color: var(--white);
+    border: none;
+    padding: 12px;
+    border-radius: var(--border-radius);
+}
 
 /* --- Ticket Modal Styles --- */
 .modal-overlay {
@@ -478,7 +480,6 @@ textarea.form-control {
     flex-direction: column;
     gap: 16px;
     flex-shrink: 0;
-    background-color: var(--light-gray-bg);
 }
 
 .modal-actions-panel h4 {
@@ -489,7 +490,7 @@ textarea.form-control {
     width: 100%;
     padding: 10px;
     text-align: left;
-    background-color: var(--white);
+    background-color: var(--light-gray-bg);
     border: 1px solid var(--gray-border);
     border-radius: var(--border-radius);
     cursor: pointer;
@@ -498,25 +499,38 @@ textarea.form-control {
     background-color: var(--medium-gray-bg);
 }
 
+/* NOWA LOGIKA CSS DLA KONTROLEK W MODALU */
+.modal-actions-panel.is-closed .btn-action[data-action="open-ticket"] {
+    display: block; /* Pokaż tylko przycisk otwierania */
+}
+
+.modal-actions-panel:not(.is-closed) .btn-action[data-action="open-ticket"] {
+    display: none; /* Ukryj przycisk otwierania dla otwartych zgłoszeń */
+}
+
+.modal-actions-panel.is-closed .btn-action:not([data-action="open-ticket"]),
+#modal-actions-panel.is-closed .form-group {
+    display: none; /* Ukryj wszystkie inne akcje, gdy zgłoszenie jest zamknięte */
+}
+
+
 .modal-details-panel {
     flex-grow: 1;
     padding: 24px;
     overflow-y: auto;
 }
 
+.modal-meta-info {
+    margin-bottom: 24px;
+}
+
 .modal-meta-info p {
     margin-bottom: 8px;
-}
-.modal-meta-info strong {
-    min-width: 100px;
-    display: inline-block;
 }
 
 .modal-details-panel h4 {
     margin-top: 24px;
     margin-bottom: 8px;
-    border-bottom: 1px solid var(--gray-border);
-    padding-bottom: 8px;
 }
 
 .modal-status {
@@ -524,8 +538,14 @@ textarea.form-control {
     border-top: 1px solid var(--gray-border);
     font-size: 14px;
 }
-.modal-status.success { color: #155724; background-color: #d4edda; }
-.modal-status.error { color: #721c24; background-color: #f8d7da; }
+.modal-status.success {
+    color: #155724;
+    background-color: #d4edda;
+}
+.modal-status.error {
+    color: #721c24;
+    background-color: #f8d7da;
+}
 
 .loading-message, .error-message {
     padding: 24px;
@@ -533,38 +553,35 @@ textarea.form-control {
     color: var(--text-light);
 }
 
+
 /* --- Comments Section --- */
 .comments-section {
     margin-top: 32px;
 }
-
 .comments-list {
     display: flex;
     flex-direction: column;
     gap: 16px;
+    margin-bottom: 24px;
 }
 
 .comment {
-    background-color: var(--white);
+    background-color: #f9fafb;
     border: 1px solid var(--gray-border);
     border-radius: var(--border-radius);
     padding: 16px;
 }
 
 .comment.system-comment {
-    background-color: #fffbe6; /* Light yellow */
-    border-left: 4px solid #ffc107; /* Amber accent */
+    background-color: #fffbe6; /* Lekko żółtawe tło */
+    border-left: 4px solid #ffc107; /* Akcent kolorystyczny po lewej */
 }
 
 .comment-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: baseline;
     margin-bottom: 8px;
-}
-
-.comment-header strong {
-    font-weight: 600;
 }
 
 .comment-date {
@@ -577,7 +594,7 @@ textarea.form-control {
 }
 
 .comment.system-comment .comment-text {
-    font-style: italic;
+    font-style: italic; /* Kursywa dla tekstu systemowego */
     color: var(--text-light);
 }
 
@@ -587,14 +604,19 @@ textarea.form-control {
     background-color: var(--light-gray-bg);
     border-radius: var(--border-radius);
     border: 1px solid var(--gray-border);
-    font-size: 14px;
 }
 
-.comment-form {
-    margin-top: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+.comment-form textarea {
+    width: 100%;
+    min-height: 80px;
+    padding: 12px;
+    border: 1px solid var(--gray-border);
+    border-radius: var(--border-radius);
+    resize: vertical;
+    margin-bottom: 8px;
+}
+.comment-form button {
+    float: right;
 }
 
 /* --- Closing Modal Specifics --- */
