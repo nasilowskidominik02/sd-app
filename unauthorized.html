@@ -10,7 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
+    <div class="app-body-centered">
         <header>
             <h1>Service Desk App</h1>
         </header>
@@ -40,7 +40,7 @@
                 const data = await response.json();
                 
                 if (data.clientPrincipal) {
-                    // Jeśli dane są dostępne, wyświetlamy adres e-mail (lub nazwę) użytkownika
+                    // Jeśli dane są dostępne, wyświetlamy adres e-mail użytkownika
                     document.getElementById('unauthorized-email').textContent = data.clientPrincipal.userDetails;
                 }
             } catch (error) {

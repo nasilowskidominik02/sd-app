@@ -2,16 +2,16 @@
 :root {
     --primary-blue: #3b82f6;
     --primary-blue-hover: #2563eb;
-    --light-gray-bg: #f4f6f8; /* Very light gray for backgrounds */
-    --medium-gray-bg: #e9ecef; /* Slightly darker gray */
-    --gray-border: #dee2e6; /* Border gray */
+    --light-gray-bg: #f4f6f8;
+    --medium-gray-bg: #e9ecef; 
+    --gray-border: #dee2e6; 
     --text-dark: #1f2937;
     --text-light: #6b7280;
     --white: #ffffff;
     --danger-red: #ef4444;
-    --status-nieprzeczytane: #ffc107; /* Amber */
-    --status-otwarte: #28a745; /* Green */
-    --status-zamknięte: #6c757d; /* Gray */
+    --status-nieprzeczytane: #ffc107; 
+    --status-otwarte: #28a745; 
+    --status-zamknięte: #6c757d; 
     --border-radius: 8px;
     --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
 }
@@ -29,7 +29,7 @@ body {
     margin: 0;
     padding: 0;
     height: 100vh;
-    overflow: hidden; /* Prevent body scroll */
+    overflow: hidden;
 }
 
 a {
@@ -46,7 +46,7 @@ a:hover {
     display: none !important;
 }
 
-/* --- App Layout --- */
+
 .app-layout {
     display: flex;
     flex-direction: column;
@@ -131,7 +131,7 @@ a:hover {
 .main-content {
     flex-grow: 1;
     padding: 32px;
-    overflow-y: auto; /* Enable scroll only for main content */
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
 }
@@ -170,7 +170,7 @@ a:hover {
     flex-shrink: 0;
 }
 
-/* --- Login Page Specifics --- */
+/* Style dla strony logowania */
 .login-container {
     max-width: 450px;
     width: 100%;
@@ -205,7 +205,7 @@ a:hover {
     background-color: var(--primary-blue-hover);
 }
 
-/* --- Dashboard Table Styles --- */
+/* --- Style tabeli dashboardu --- */
 .table-container {
     background-color: var(--white);
     border-radius: var(--border-radius);
@@ -260,7 +260,7 @@ a:hover {
 .status-badge.status-otwarte { background-color: var(--status-otwarte); }
 .status-badge.status-zamknięte { background-color: var(--status-zamknięte); }
 
-/* --- Pagination --- */
+/* --- Paginacja --- */
 .pagination {
     margin-top: 24px;
     display: flex;
@@ -287,7 +287,7 @@ a:hover {
     border-color: var(--primary-blue);
 }
 
-/* --- New Ticket Form --- */
+/* --- Formularz nowego zgłoszenia --- */
 .form-container {
     max-width: 800px;
 }
@@ -378,7 +378,7 @@ textarea.form-control {
 .form-status.error { color: #721c24; }
 
 
-/* --- Unauthorized Page --- */
+/* --- Strona nieautoryzowana --- */
 .panel {
     width: 100%;
     max-width: 500px;
@@ -408,7 +408,7 @@ textarea.form-control {
     border-radius: var(--border-radius);
 }
 
-/* --- Ticket Modal Styles --- */
+/* --- Style modalne zgłoszenia --- */
 .modal-overlay {
     position: fixed;
     top: 0;
@@ -495,7 +495,7 @@ textarea.form-control {
     background-color: var(--medium-gray-bg);
 }
 
-/* POPRAWIONA LOGIKA WIDOCZNOŚCI PRZYCISKÓW */
+/* Logika widoczności przycisków w panelu akcji */
 .modal-actions-panel.is-closed > *:not([data-action="open-ticket"]) {
     display: none;
 }
@@ -549,22 +549,22 @@ textarea.form-control {
 }
 
 
-/* --- Comments Section --- */
+/* --- Sekcja komentarzy --- */
 .comments-section {
     margin-top: 32px;
     display: flex;
     flex-direction: column;
     flex-grow: 1;
-    min-height: 0; /* Ważne dla flexbox */
+    min-height: 0; 
 }
 .comments-list {
     flex-grow: 1;
-    overflow-y: auto; /* Włącza scrollowanie tylko dla listy komentarzy */
+    overflow-y: auto; /* Scrollowaanie, gdy jest dużo komentarzy */
     display: flex;
     flex-direction: column;
     gap: 16px;
     margin-bottom: 24px;
-    padding-right: 10px; /* Dodatkowy padding, żeby scrollbar nie nachodził na treść */
+    padding-right: 10px; 
 }
 
 .comment {
@@ -575,8 +575,8 @@ textarea.form-control {
 }
 
 .comment.system-comment {
-    background-color: #fffbe6; /* Lekko żółtawe tło */
-    border-left: 4px solid #ffc107; /* Akcent kolorystyczny po lewej */
+    background-color: #fffbe6; 
+    border-left: 4px solid #ffc107; 
 }
 
 .comment-header {
@@ -597,7 +597,7 @@ textarea.form-control {
 }
 
 .comment.system-comment .comment-text {
-    font-style: italic; /* Kursywa dla tekstu systemowego */
+    font-style: italic; 
     color: var(--text-light);
 }
 
@@ -610,7 +610,7 @@ textarea.form-control {
 }
 
 .comment-form {
-    margin-top: auto; /* Przykleja formularz na dole */
+    margin-top: auto;
     flex-shrink: 0;
 }
 
@@ -627,7 +627,7 @@ textarea.form-control {
     float: right;
 }
 
-/* --- Closing Modal Specifics --- */
+
 .radio-group {
     display: flex;
     gap: 24px;
