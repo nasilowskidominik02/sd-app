@@ -12,7 +12,7 @@
 <body>
 
     <div class="app-layout">
-        <!-- Górny baner -->
+        <!-- Górny baner na całą szerokość -->
         <header class="app-header">
             <div class="header-title">
                 Aplikacja do zgłaszania problemów do Service Desk
@@ -226,6 +226,7 @@
         
         function populateModal(ticket) {
             const modalBody = document.getElementById('modal-body');
+            // Przywracamy strukturę za każdym razem, aby uniknąć problemów z listenerami
             modalBody.innerHTML = `
                 <aside id="modal-actions-panel" class="modal-actions-panel hidden">
                     <h4>Akcje</h4>
@@ -283,6 +284,7 @@
                     link.target = "_blank";
                     link.rel = "noopener noreferrer";
                     attachmentsContainer.appendChild(link);
+                    attachmentsContainer.appendChild(document.createElement('br')); // Nowa linia dla każdego załącznika
                 });
             } else {
                 attachmentsContainer.innerText = 'Brak załączników.';
@@ -291,7 +293,7 @@
             const commentsList = document.getElementById('comments-list');
             commentsList.innerHTML = '';
             if (ticket.comments && ticket.comments.length > 0) {
-                ticket.comments.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                ticket.comments.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)); // Sortuj od najstarszych do najnowszych
                 ticket.comments.forEach(comment => {
                     const commentEl = document.createElement('div');
                     commentEl.className = `comment ${comment.isSystemComment ? 'system-comment' : ''}`;
@@ -308,6 +310,7 @@
                     `;
                     commentsList.appendChild(commentEl);
                 });
+                commentsList.scrollTop = commentsList.scrollHeight; // Przewiń na sam dół
             } else {
                 commentsList.innerHTML = '<p>Brak komentarzy.</p>';
             }
@@ -323,7 +326,7 @@
             document.getElementById('comment-form').classList.toggle('hidden', !isServiceDesk || isClosed);
             
             document.getElementById('category-select').value = ticket.category;
-            addModalEventListeners();
+            addModalEventListeners(); // Zawsze podpinamy listenery po wyrenderowaniu
         }
 
         function closeModal() {
@@ -362,10 +365,10 @@
                 statusEl.textContent = 'Zmiany zapisane pomyślnie!';
                 statusEl.classList.add('success');
                 
-                pendingChanges = {};
+                pendingChanges = {}; // Resetuj zmiany po zapisie
                 currentTicketData = updatedTicket;
-                populateModal(currentTicketData); 
-                loadTickets(); 
+                populateModal(currentTicketData); // Odśwież widok modala z nowymi danymi
+                loadTickets(); // Odśwież listę w tle
 
                 setTimeout(() => {
                     statusEl.classList.add('hidden');
@@ -426,7 +429,7 @@
             }
             
             pendingChanges = {
-                status: form.elements.closingStatus.value, // Wysyłamy "Rozwiązane" lub "Odrzucone"
+                status: form.elements.closingStatus.value,
                 closingComment: `Zgłoszenie zamknięte jako "${form.elements.closingStatus.value}": ${form.elements['closing-comment-input'].value}`,
                 attachment: attachmentInfo ? { fileName: attachmentInfo.fileName, url: attachmentInfo.url } : null
             };
@@ -435,47 +438,62 @@
             closeClosingModal();
         }
         
-        // POPRAWIONA, BARDZIEJ NIEZAWODNA FUNKCJA DO PODPINANIA EVENTÓW
+        // NOWA, POPRAWIONA WERSJA PODPINANIA EVENTÓW
         function addModalEventListeners() {
             const modal = document.getElementById('ticket-modal');
-            modal.querySelector('#modal-close-btn').addEventListener('click', closeModal);
-            modal.querySelector('#modal-save-btn').addEventListener('click', saveChanges);
+            const closeBtn = modal.querySelector('#modal-close-btn');
+            const saveBtn = modal.querySelector('#modal-save-btn');
+            const actionsPanel = modal.querySelector('#modal-actions-panel');
+            const categorySelect = modal.querySelector('#category-select');
+            const commentForm = modal.querySelector('#comment-form');
 
-            modal.querySelectorAll('.btn-action').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const action = e.target.dataset.action;
-                    if (action === 'close-ticket') {
-                        openClosingModal();
-                    } else {
-                        if (action === 'open-ticket') {
-                            pendingChanges.status = 'Otwarte';
+            if (closeBtn) closeBtn.onclick = closeModal;
+            if (saveBtn) saveBtn.onclick = saveChanges;
+
+            if (actionsPanel) {
+                actionsPanel.querySelectorAll('.btn-action').forEach(btn => {
+                    btn.onclick = (e) => {
+                        const action = e.target.dataset.action;
+                        if (action === 'close-ticket') {
+                            openClosingModal();
+                        } else {
+                            if (action === 'open-ticket') {
+                                pendingChanges.status = 'Otwarte';
+                            }
+                            if (action === 'assign-tome') {
+                                pendingChanges.assignedTo = { person: currentUserDetails.userDetails };
+                            }
+                            
+                            const statusEl = modal.querySelector('#modal-status');
+                            statusEl.textContent = 'Zmiany oczekują na zapisanie.';
+                            statusEl.classList.remove('hidden', 'success', 'error');
                         }
-                        if (action === 'assign-tome') {
-                            pendingChanges.assignedTo = { person: currentUserDetails.userDetails };
-                        }
-                        
-                        modal.querySelector('#modal-status').textContent = 'Zmiany oczekują na zapisanie.';
-                        modal.querySelector('#modal-status').classList.remove('hidden', 'success', 'error');
-                    }
+                    };
                 });
-            });
+            }
             
-            modal.querySelector('#category-select').addEventListener('change', (e) => {
-                pendingChanges.category = e.target.value;
-                modal.querySelector('#modal-status').textContent = 'Zmiany oczekują na zapisanie.';
-                modal.querySelector('#modal-status').classList.remove('hidden', 'success', 'error');
-            });
+            if (categorySelect) {
+                categorySelect.onchange = (e) => {
+                    pendingChanges.category = e.target.value;
+                    const statusEl = modal.querySelector('#modal-status');
+                    statusEl.textContent = 'Zmiany oczekują na zapisanie.';
+                    statusEl.classList.remove('hidden', 'success', 'error');
+                };
+            }
             
-            modal.querySelector('#comment-form').addEventListener('submit', (e) => {
-                e.preventDefault();
-                const commentInput = modal.querySelector('#comment-input');
-                if(commentInput.value.trim()){
-                    pendingChanges.newComment = { text: commentInput.value.trim() };
-                    commentInput.value = '';
-                    modal.querySelector('#modal-status').textContent = 'Zmiany oczekują na zapisanie.';
-                    modal.querySelector('#modal-status').classList.remove('hidden', 'success', 'error');
-                }
-            });
+            if (commentForm) {
+                commentForm.onsubmit = (e) => {
+                    e.preventDefault();
+                    const commentInput = modal.querySelector('#comment-input');
+                    if(commentInput.value.trim()){
+                        pendingChanges.newComment = { text: commentInput.value.trim() };
+                        commentInput.value = '';
+                        const statusEl = modal.querySelector('#modal-status');
+                        statusEl.textContent = 'Zmiany oczekują na zapisanie.';
+                        statusEl.classList.remove('hidden', 'success', 'error');
+                    }
+                };
+            }
         }
 
         function startAutoRefresh() {
@@ -551,4 +569,3 @@
     </script>
 </body>
 </html>
-
