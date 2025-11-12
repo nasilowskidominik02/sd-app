@@ -280,15 +280,18 @@
                 </div>
             `;
             
-            document.getElementById('modal-title').innerText = `Zgłoszenie: ${ticket.id}`;
+            document.getElementById('modal-title').innerText = `Zgłoszenie: ${ticket.id} - ${escapeHTML(ticket.title)}`;
             document.getElementById('modal-content-text').innerText = ticket.content;
             
             const metaInfo = `
                 <p><strong>Status:</strong> <span id="modal-status-badge" class="status-badge status-${ticket.status.toLowerCase().replace(/\s/g, '-')}">${escapeHTML(ticket.status)}</span></p>
                 <p><strong>Zgłaszający:</strong> ${escapeHTML(ticket.reportingUser.name)}</p>
+                <p><strong>Odpowiedzialny:</strong> ${escapeHTML(ticket.assignedTo.person || '---')}</p>
+                <p><strong>Grupa:</strong> ${escapeHTML(ticket.assignedTo.group)}</p>
                 <p><strong>Utworzono:</strong> ${new Date(ticket.dates.createdAt).toLocaleString('pl-PL')}</p>
                 <p><strong>SLA:</strong> ${new Date(ticket.dates.guaranteedResolutionAt).toLocaleString('pl-PL')}</p>
             `;
+            
             document.getElementById('modal-meta-info').innerHTML = metaInfo;
 
             const attachmentsContainer = document.getElementById('modal-attachments');
