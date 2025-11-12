@@ -73,15 +73,19 @@ module.exports = async function (context, req) {
         } else {
             // Standardowa logika dla otwartych zgłoszeń
             if (changes.status && ticket.status !== changes.status) {
-                 // Jeśli zmiana statusu to zamknięcie (Rozwiązane/Odrzucone), ustawiamy nadrzędny status "Zamknięte"
                 if (['Rozwiązane', 'Odrzucone'].includes(changes.status)) {
                     addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "Zamknięte".`, clientPrincipal);
-                    ticket.status = 'Zamknięte'; // Ustawiamy status nadrzędny
+                    ticket.status = 'Zamknięte'; 
                     ticket.dates.closedAt = new Date().toISOString();
+                    if (!ticket.assignedTo.person) {
+                        ticket.assignedTo.person = clientPrincipal.userDetails;
+                        addSystemComment(ticket, `Automatycznie przypisano zgłoszenie do: ${clientPrincipal.userDetails} (osoba zamykająca).`, clientPrincipal);
+                    }
+
                     if (changes.closingComment) {
                          addSystemComment(ticket, changes.closingComment, clientPrincipal);
                     }
-                } else { // Dla innych zmian statusu (np. na "Otwarte")
+                } else { 
                     addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "${changes.status}".`, clientPrincipal);
                     ticket.status = changes.status;
                 }
