@@ -183,8 +183,25 @@
                     row.dataset.ticketId = ticket.id;
                     row.onclick = () => openTicketModal(ticket.id);
 
+                    const isClosed = ['Rozwiązane', 'Odrzucone', 'Zamknięte'].includes(ticket.status);
+
+
+                    if (!isClosed) {
+                        const now = new Date();
+                        const slaTime = new Date(ticket.dates.guaranteedResolutionAt);
+                        const diffMs = slaTime.getTime() - now.getTime();
+                        const diffHours = diffMs / (1000 * 60 * 60); 
+
+                        if (diffMs < 0) {
+                            row.classList.add('sla-danger'); 
+                        } else if (diffHours <= 2) {
+                            row.classList.add('sla-warning'); 
+                        }
+                    }
+
                     const statusClass = `status-${ticket.status.toLowerCase().replace(/\s/g, '-')}`;
-                    const closedDate = ['Rozwiązane', 'Odrzucone', 'Zamknięte'].includes(ticket.status) && ticket.dates.closedAt ? new Date(ticket.dates.closedAt).toLocaleString('pl-PL') : '---';
+
+                    const closedDate = isClosed && ticket.dates.closedAt ? new Date(ticket.dates.closedAt).toLocaleString('pl-PL') : '---';
 
                     row.innerHTML = `
                         <td>${escapeHTML(ticket.id)}</td>

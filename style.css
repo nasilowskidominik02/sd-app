@@ -233,6 +233,24 @@ a:hover {
     text-transform: uppercase;
 }
 
+/* Style dla podświetlania wierszy na podstawie SLA */
+.ticket-table tbody tr.sla-warning {
+    background-color: #fef9c3; /* Lekki żółty */
+    font-weight: 500; /* Delikatne pogrubienie dla lepszej widoczności */
+}
+.ticket-table tbody tr.sla-danger {
+    background-color: #fee2e2; /* Lekki czerwony */
+    font-weight: 500;
+}
+
+/* Poprawka hover, aby był widoczny na podświetlonych wierszach */
+.ticket-table tbody tr.sla-warning:hover {
+    background-color: #fef08a; /* Ciemniejszy żółty */
+}
+.ticket-table tbody tr.sla-danger:hover {
+    background-color: #fecaca; /* Ciemniejszy czerwony */
+}
+
 .ticket-table tbody tr:last-child td {
     border-bottom: none;
 }
