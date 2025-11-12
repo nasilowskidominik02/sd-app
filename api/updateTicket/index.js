@@ -90,6 +90,11 @@ module.exports = async function (context, req) {
             if (changes.assignedTo && changes.assignedTo.person && ticket.assignedTo.person !== changes.assignedTo.person) {
                 addSystemComment(ticket, `Przypisano zgłoszenie do: ${changes.assignedTo.person}.`, clientPrincipal);
                 ticket.assignedTo.person = changes.assignedTo.person;
+
+                if (ticket.status === 'Nieprzeczytane') {
+                    addSystemComment(ticket, `Automatycznie zmieniono status z "Nieprzeczytane" na "Otwarte".`, clientPrincipal);
+                    ticket.status = 'Otwarte';
+                }
             }
 
             if (changes.category && ticket.category !== changes.category) {
@@ -104,6 +109,11 @@ module.exports = async function (context, req) {
                         addSystemComment(ticket, `Usunięto przypisanie osoby z powodu zmiany grupy.`, clientPrincipal);
                         ticket.assignedTo.person = null;
                     }
+                }
+
+                if (ticket.status === 'Nieprzeczytane') { 
+                    addSystemComment(ticket, `Automatycznie zmieniono status z "Nieprzeczytane" na "Otwarte".`, clientPrincipal);
+                    ticket.status = 'Otwarte';
                 }
             }
 
