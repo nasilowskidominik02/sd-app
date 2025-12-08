@@ -404,12 +404,17 @@
             document.getElementById('closing-modal').classList.remove('hidden');
         }
 
-        function closeClosingModal() {
+       function closeClosingModal() {
             const modal = document.getElementById('closing-modal');
             modal.classList.add('hidden');
             document.getElementById('closing-form').reset();
             document.getElementById('closing-modal-status').classList.add('hidden');
             document.getElementById('closing-file-name').textContent = '';
+
+            const submitButton = document.querySelector('#closing-form button[type="submit"]');
+            if (submitButton) {
+                submitButton.disabled = false;
+            }
         }
 
         async function handleClosingFormSubmit(event) {
