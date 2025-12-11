@@ -1,6 +1,10 @@
 const { CosmosClient } = require("@azure/cosmos");
 
-// Mapa kategorii i przypisanych do nich grup
+// OPTYMALIZACJA: Inicjalizacja połączenia poza funkcją
+const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
+const container = client.database("ServiceDeskDB").container("Tickets");
+
+// OPTYMALIZACJA: Stałe poza funkcją
 const categoryToGroupMap = {
     "Instalacja oprogramowania": "Pierwsza linia wsparcia",
     "Konfiguracja oprogramowania": "Pierwsza linia wsparcia",
@@ -11,9 +15,6 @@ const categoryToGroupMap = {
     "Inne": "Pierwsza linia wsparcia"
 };
 
-/**
- * Funkcja pomocnicza do dodawania komentarza systemowego do historii zgłoszenia.
- */
 function addSystemComment(ticket, text, clientPrincipal) {
     if (!ticket.comments) {
         ticket.comments = [];
@@ -45,13 +46,12 @@ module.exports = async function (context, req) {
     }
 
     try {
-        const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
-        const container = client.database("ServiceDeskDB").container("Tickets");
-
         const querySpec = {
             query: "SELECT * FROM c WHERE c.id = @ticketId",
             parameters: [{ name: "@ticketId", value: ticketId }]
         };
+        
+        // Używamy globalnego 'container'
         const { resources: items } = await container.items.query(querySpec).fetchAll();
 
         if (items.length === 0) {
@@ -60,7 +60,6 @@ module.exports = async function (context, req) {
         let ticket = items[0];
         const originalCategory = ticket.category;
 
-        // Logika sprawdzająca status zgłoszenia
         if (ticket.status === 'Zamknięte') {
             const isReopening = changes.status && changes.status === 'Otwarte';
             if (isReopening) {
@@ -71,7 +70,6 @@ module.exports = async function (context, req) {
                 return { status: 403, body: { message: "Zgłoszenie musi mieć status 'Otwarte', aby można było je modyfikować." } };
             }
         } else {
-            // Standardowa logika dla otwartych zgłoszeń
             if (changes.status && ticket.status !== changes.status) {
                 if (['Rozwiązane', 'Odrzucone'].includes(changes.status)) {
                     addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "Zamknięte".`, clientPrincipal);
@@ -134,6 +132,7 @@ module.exports = async function (context, req) {
         
         if (ticket.category !== originalCategory) {
             const { resource: createdItem } = await container.items.create(ticket);
+            // Używamy partition key (category) przy usuwaniu
             await container.item(ticketId, originalCategory).delete();
             context.res = { body: createdItem };
         } else {
@@ -146,4 +145,3 @@ module.exports = async function (context, req) {
         context.res = { status: 500, body: { message: "Wystąpił błąd podczas aktualizacji zgłoszenia." } };
     }
 };
-
