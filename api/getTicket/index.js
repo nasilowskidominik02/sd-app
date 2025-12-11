@@ -1,5 +1,9 @@
 const { CosmosClient } = require("@azure/cosmos");
 
+// OPTYMALIZACJA: Inicjalizacja połączenia poza funkcją (Singleton)
+const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
+const container = client.database("ServiceDeskDB").container("Tickets");
+
 module.exports = async function (context, req) {
     const ticketId = req.query.id;
 
@@ -9,11 +13,7 @@ module.exports = async function (context, req) {
     }
 
     try {
-        const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
-        const container = client.database("ServiceDeskDB").container("Tickets");
-
-        // ZMIANA: Używamy zapytania SQL, aby znaleźć element po ID, 
-        // co jest bardziej niezawodne niż próba bezpośredniego odczytu bez klucza partycji.
+        // Zoptymalizowane zapytanie (korzystamy z globalnego 'container')
         const querySpec = {
             query: "SELECT * FROM c WHERE c.id = @ticketId",
             parameters: [
@@ -24,7 +24,6 @@ module.exports = async function (context, req) {
         const { resources: items } = await container.items.query(querySpec).fetchAll();
 
         if (items.length > 0) {
-            // Zwracamy pierwszy znaleziony element (powinien być tylko jeden)
             context.res = { body: items[0] };
         } else {
             context.res = { status: 404, body: "Ticket not found." };
@@ -34,4 +33,3 @@ module.exports = async function (context, req) {
         context.res = { status: 500, body: "Error reading from the database." };
     }
 };
-
