@@ -181,7 +181,7 @@
                     const row = tbody.insertRow();
                     row.className = 'ticket-row';
                     row.dataset.ticketId = ticket.id;
-                    row.onclick = () => openTicketModal(ticket.id);
+                    row.onclick = () => openTicketModal(ticket.id, ticket);
 
                     const isClosed = ['Rozwiązane', 'Odrzucone', 'Zamknięte'].includes(ticket.status);
 
@@ -415,7 +415,7 @@
             if (submitButton) {
                 submitButton.disabled = false;
             }
-        }
+        }  
 
         async function handleClosingFormSubmit(event) {
             event.preventDefault();
