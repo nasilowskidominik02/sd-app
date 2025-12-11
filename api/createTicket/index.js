@@ -1,17 +1,17 @@
 const { CosmosClient } = require("@azure/cosmos");
 
-/**
- * Funkcja pomocnicza do formatowania numeru z wiodącymi zerami (np. 1 -> "0001")
- */
+// OPTYMALIZACJA: Inicjalizacja połączeń poza funkcją
+const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
+const database = client.database("ServiceDeskDB");
+const countersContainer = database.container("Counters");
+const ticketsContainer = database.container("Tickets");
+
 function padNumber(num, size) {
     let s = num + "";
     while (s.length < size) s = "0" + s;
     return s;
 }
 
-/**
- * Oblicza gwarantowaną datę rozwiązania (SLA).
- */
 function calculateSLA(startDate, category) {
     const slaHours = {
         "Instalacja oprogramowania": 4,
@@ -26,13 +26,12 @@ function calculateSLA(startDate, category) {
     let minutesToAdd = (slaHours[category] || 8) * 60;
     let currentDate = new Date(startDate);
 
-    // Normalizuj datę startową do najbliższej godziny roboczej
     let day = currentDate.getDay();
     let hour = currentDate.getHours();
-    if (day === 6) { // Sobota
+    if (day === 6) { 
         currentDate.setDate(currentDate.getDate() + 2);
         currentDate.setHours(8, 0, 0, 0);
-    } else if (day === 0) { // Niedziela
+    } else if (day === 0) { 
         currentDate.setDate(currentDate.getDate() + 1);
         currentDate.setHours(8, 0, 0, 0);
     } else if (hour < 8) {
@@ -77,11 +76,7 @@ module.exports = async function (context, req) {
     }
 
     try {
-        const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
-        const database = client.database("ServiceDeskDB");
-        
-        // --- LOGIKA GENEROWANIA NOWEGO ID ---
-        const countersContainer = database.container("Counters");
+        // Używamy globalnego countersContainer
         const { resource: counterDoc } = await countersContainer.item("ticketSequence", "ticketSequence").read();
         
         const currentYear = new Date().getFullYear();
@@ -90,20 +85,18 @@ module.exports = async function (context, req) {
         if (counterDoc.year === currentYear) {
             nextNumber = counterDoc.lastNumber + 1;
         } else {
-            nextNumber = 1; // Resetuj numerację dla nowego roku
+            nextNumber = 1; 
             counterDoc.year = currentYear;
         }
         
         const newTicketId = `${currentYear}-${padNumber(nextNumber, 4)}`;
         
-        // Zaktualizuj licznik w bazie
         counterDoc.lastNumber = nextNumber;
         await countersContainer.items.upsert(counterDoc);
-        // --- KONIEC LOGIKI GENEROWANIA ID ---
 
         const now = new Date();
         const newTicket = {
-            id: newTicketId, // Używamy naszego nowego, sekwencyjnego ID
+            id: newTicketId, 
             title: title,
             category: "Inne",
             status: "Nieprzeczytane",
@@ -122,10 +115,10 @@ module.exports = async function (context, req) {
                 guaranteedResolutionAt: calculateSLA(now, "Inne").toISOString()
             },
             attachments: attachment ? [attachment] : [],
-            comments: [] // Inicjalizuj pustą tablicę na komentarze
+            comments: [] 
         };
         
-        const ticketsContainer = database.container("Tickets");
+        // Używamy globalnego ticketsContainer
         const { resource: createdItem } = await ticketsContainer.items.create(newTicket);
 
         context.res = {
@@ -140,4 +133,3 @@ module.exports = async function (context, req) {
         };
     }
 };
-
