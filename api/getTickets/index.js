@@ -1,8 +1,10 @@
 const { CosmosClient } = require("@azure/cosmos");
 
-module.exports = async function (context, req) {
-    context.log('JavaScript HTTP trigger function processed a request to get tickets.');
+// 1. OPTYMALIZACJA: Klient tworzony raz i trzymany w pamięci (Global Variable)
+const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
+const container = client.database("ServiceDeskDB").container("Tickets");
 
+module.exports = async function (context, req) {
     const header = req.headers['x-ms-client-principal'];
     if (!header) {
         return { status: 401, body: "User is not authenticated." };
@@ -14,26 +16,23 @@ module.exports = async function (context, req) {
     const isServiceDesk = clientPrincipal.userRoles.includes('sd');
     const userEmail = clientPrincipal.userDetails;
 
-    // --- Paginacja i Wyszukiwanie ---
     const page = parseInt(req.query.page) || 1;
     const searchId = req.query.searchId || '';
     const pageSize = 10;
     const offset = (page - 1) * pageSize;
 
+    // Twoje zoptymalizowane zapytanie wybiórcze
     let query = "SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c";
     let countQuery = "SELECT VALUE COUNT(1) FROM c";
     let whereClauses = [];
     let parameters = [];
 
-    // Filtrowanie dla zwykłego użytkownika
     if (!isServiceDesk) {
         whereClauses.push("c.reportingUser.email = @userEmail");
         parameters.push({ name: "@userEmail", value: userEmail });
     }
 
-    // Filtrowanie po ID zgłoszenia
     if (searchId) {
-        // Używamy STARTSWITH для częściowego dopasowania
         whereClauses.push("STARTSWITH(c.id, @searchId)");
         parameters.push({ name: "@searchId", value: searchId });
     }
@@ -43,27 +42,24 @@ module.exports = async function (context, req) {
         countQuery += " WHERE " + whereClauses.join(" AND ");
     }
     
-    // Dodanie sortowania i paginacji do głównego zapytania
     query += " ORDER BY c.dates.createdAt DESC OFFSET @offset LIMIT @limit";
     parameters.push({ name: "@offset", value: offset });
     parameters.push({ name: "@limit", value: pageSize });
 
     const querySpec = { query, parameters };
-    // Usuwamy parametry paginacji z zapytania liczącego
     const countParams = parameters.filter(p => p.name !== '@offset' && p.name !== '@limit');
     const countQuerySpec = { query: countQuery, parameters: countParams }; 
     
     try {
-        const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
-        const database = client.database("ServiceDeskDB");
-        const container = database.container("Tickets");
+        // 2. OPTYMALIZACJA: Równoległe pobieranie danych i licznika (Promise.all)
+        // Zamiast czekać na Count, a potem na Items, puszczamy oba zapytania naraz.
+        const [countResponse, itemsResponse] = await Promise.all([
+            container.items.query(countQuerySpec).fetchAll(),
+            container.items.query(querySpec).fetchAll()
+        ]);
 
-        // Pobranie całkowitej liczby zgłoszeń do paginacji
-        const { resources: countResult } = await container.items.query(countQuerySpec).fetchAll();
-        const totalCount = countResult[0];
-
-        // Pobranie zgłoszeń dla danej strony
-        const { resources: items } = await container.items.query(querySpec).fetchAll();
+        const totalCount = countResponse.resources[0];
+        const items = itemsResponse.resources;
 
         context.res = {
             body: {
@@ -82,4 +78,3 @@ module.exports = async function (context, req) {
         };
     }
 };
-
