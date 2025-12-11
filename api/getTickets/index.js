@@ -20,7 +20,7 @@ module.exports = async function (context, req) {
     const pageSize = 10;
     const offset = (page - 1) * pageSize;
 
-    let query = "SELECT * FROM c";
+    let query = "SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c";
     let countQuery = "SELECT VALUE COUNT(1) FROM c";
     let whereClauses = [];
     let parameters = [];
