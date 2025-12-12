@@ -12,7 +12,6 @@
 <body>
 
     <div class="app-layout">
-        <!-- Górny baner na całą szerokość -->
         <header class="app-header">
             <div class="header-title">
                 Aplikacja do zgłaszania problemów do Service Desk
@@ -23,9 +22,7 @@
             </div>
         </header>
 
-        <!-- Główna część aplikacji (pasek boczny + treść) -->
         <div class="app-body">
-            <!-- Pasek boczny z nawigacją -->
             <aside class="sidebar">
                 <nav class="sidebar-nav">
                     <a href="dashboard.html" class="nav-item">Zgłoszenia</a>
@@ -34,7 +31,6 @@
                 </nav>
             </aside>
             
-            <!-- Główna zawartość strony -->
             <main class="main-content">
                 <h1>Utwórz nowe zgłoszenie</h1>
                 
@@ -43,6 +39,14 @@
                         <label for="title">Tytuł zgłoszenia</label>
                         <input type="text" id="title" name="title" class="form-control" required>
                     </div>
+                    
+                    <div class="form-group">
+                        <label for="category">Kategoria</label>
+                        <select id="category" name="category" class="form-control">
+                            <option value="">Ładowanie kategorii...</option>
+                        </select>
+                    </div>
+
                     <div class="form-group">
                         <label for="content">Treść zgłoszenia</label>
                         <textarea id="content" name="content" class="form-control" rows="10" required></textarea>
@@ -65,13 +69,39 @@
             </main>
         </div>
 
-        <!-- Stopka Aplikacji -->
         <footer class="app-footer">
             <p>Dominik Nasiłowski 2026 (R)</p>
         </footer>
     </div>
     
     <script>
+        // Funkcja do pobierania kategorii z backendu
+        async function loadCategories() {
+            const categorySelect = document.getElementById('category');
+            try {
+                const response = await fetch('/api/getSettings');
+                if (!response.ok) throw new Error('Błąd pobierania ustawień');
+                
+                const settings = await response.json();
+                
+                categorySelect.innerHTML = ''; // Wyczyść "Ładowanie..."
+                
+                if (settings.categories && settings.categories.length > 0) {
+                    settings.categories.forEach(cat => {
+                        const option = document.createElement('option');
+                        option.value = cat.name;
+                        option.textContent = cat.name;
+                        categorySelect.appendChild(option);
+                    });
+                } else {
+                    categorySelect.innerHTML = '<option value="Inne">Inne (Domyślna)</option>';
+                }
+            } catch (error) {
+                console.error("Błąd ładowania kategorii:", error);
+                categorySelect.innerHTML = '<option value="Inne">Inne (Tryb awaryjny)</option>';
+            }
+        }
+
         async function initializePage() {
             try {
                 const response = await fetch('/.auth/me');
@@ -88,6 +118,9 @@
                 if (isServiceDesk) {
                     document.getElementById('admin-link').classList.remove('hidden');
                 }
+                
+                // Załaduj kategorie przy starcie
+                await loadCategories();
 
             } catch (error) {
                 console.error('Błąd inicjalizacji strony:', error);
@@ -108,14 +141,12 @@
             let attachmentInfo = null;
             const fileInput = form.elements.attachment;
 
-            // Krok 1: Prześlij plik, jeśli został wybrany
+            // Krok 1: Prześlij plik
             if (fileInput.files.length > 0) {
                 statusMessage.textContent = 'Przesyłanie załącznika...';
                 const file = fileInput.files[0];
-                
                 const reader = new FileReader();
                 reader.readAsDataURL(file);
-                // Czekamy, aż plik zostanie w pełni wczytany do pamięci jako Base64
                 await new Promise(resolve => reader.onload = resolve);
 
                 try {
@@ -124,10 +155,7 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ fileName: file.name, fileContent: reader.result })
                     });
-
-                    if (!uploadResponse.ok) {
-                        throw new Error('Błąd podczas przesyłania pliku. Spróbuj ponownie.');
-                    }
+                    if (!uploadResponse.ok) throw new Error('Błąd przesyłania pliku');
                     attachmentInfo = await uploadResponse.json(); 
                 } catch (error) {
                     statusMessage.textContent = `Błąd: ${error.message}`;
@@ -137,11 +165,12 @@
                 }
             }
 
-            // Krok 2: Utwórz zgłoszenie (z informacją o załączniku lub bez)
+            // Krok 2: Utwórz zgłoszenie
             statusMessage.textContent = 'Wysyłanie zgłoszenia...';
             const ticketData = {
                 title: form.elements.title.value,
                 content: form.elements.content.value,
+                category: form.elements.category.value, // Pobieramy wybraną kategorię
                 attachment: attachmentInfo
             };
 
@@ -157,7 +186,7 @@
                     throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
                 }
 
-                statusMessage.textContent = 'Zgłoszenie zostało pomyślnie utworzone! Przekierowywanie...';
+                statusMessage.textContent = 'Zgłoszenie utworzone pomyślnie! Przekierowywanie...';
                 statusMessage.classList.add('success');
 
                 setTimeout(() => {
@@ -165,7 +194,7 @@
                 }, 2000);
 
             } catch (error) {
-                console.error('Błąd podczas tworzenia zgłoszenia:', error);
+                console.error('Błąd tworzenia zgłoszenia:', error);
                 statusMessage.textContent = `Błąd: ${error.message}`;
                 statusMessage.classList.add('error');
                 submitButton.disabled = false;
@@ -175,7 +204,6 @@
         initializePage();
         document.getElementById('new-ticket-form').addEventListener('submit', handleFormSubmit);
 
-        // Event do wyświetlania nazwy wybranego pliku - załączika
         const fileInput = document.getElementById('attachment');
         const fileNameDisplay = document.getElementById('file-name');
         fileInput.addEventListener('change', () => {
@@ -185,8 +213,6 @@
                 fileNameDisplay.textContent = '';
             }
         });
-
     </script>
 </body>
 </html>
-
