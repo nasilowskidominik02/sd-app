@@ -17,6 +17,22 @@
                 Aplikacja do zgłaszania problemów do Service Desk
             </div>
             <div class="header-user-info">
+                <div class="notification-wrapper" id="notification-wrapper">
+                    <button class="notification-btn" id="notification-btn" onclick="toggleNotifications()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                        </svg>
+                        <span id="notification-badge" class="notification-badge hidden">0</span>
+                    </button>
+                    
+                    <div id="notification-dropdown" class="notification-dropdown">
+                        <div class="notification-header">Powiadomienia</div>
+                        <div id="notification-list" class="notification-list">
+                            <div class="notification-empty">Brak nowych powiadomień</div>
+                        </div>
+                    </div>
+                </div>
                 <span id="userName">Ładowanie...</span>
                 <a href="/.auth/logout" class="btn-logout">Wyloguj</a>
             </div>
@@ -122,14 +138,107 @@
         let pendingChanges = {};
         let currentPage = 1;
         let refreshInterval;
-        let cachedCategories = []; // Cache na kategorie
+        let cachedCategories = []; 
+        
+        // Zmienne do obsługi powiadomień
+        let notificationsInterval;
+        let currentNotifications = [];
 
         function escapeHTML(str) {
             if (str === null || str === undefined) return '';
             return str.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
         }
 
-        // --- Pobieranie kategorii (do selecta w modalu) ---
+        // --- Logika Powiadomień (NOWOŚĆ) ---
+        
+        async function fetchNotifications() {
+            try {
+                const response = await fetch('/api/getNotifications');
+                if (response.ok) {
+                    currentNotifications = await response.json();
+                    updateNotificationUI();
+                }
+            } catch (error) {
+                console.error("Błąd pobierania powiadomień:", error);
+            }
+        }
+
+        function updateNotificationUI() {
+            const badge = document.getElementById('notification-badge');
+            const list = document.getElementById('notification-list');
+            
+            // 1. Aktualizacja licznika
+            if (currentNotifications.length > 0) {
+                badge.textContent = currentNotifications.length;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+
+            // 2. Aktualizacja listy
+            list.innerHTML = '';
+            if (currentNotifications.length === 0) {
+                list.innerHTML = '<div class="notification-empty">Brak nowych powiadomień</div>';
+                return;
+            }
+
+            currentNotifications.forEach(notif => {
+                const item = document.createElement('div');
+                item.className = 'notification-item unread';
+                item.onclick = () => handleNotificationClick(notif);
+                
+                const time = new Date(notif.createdAt).toLocaleString('pl-PL', { 
+                    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+                });
+
+                item.innerHTML = `
+                    <div>${escapeHTML(notif.message)}</div>
+                    <div class="notification-time">${time}</div>
+                `;
+                list.appendChild(item);
+            });
+        }
+
+        function toggleNotifications() {
+            const dropdown = document.getElementById('notification-dropdown');
+            dropdown.classList.toggle('show');
+        }
+
+        async function handleNotificationClick(notification) {
+            // 1. Oznacz jako przeczytane w bazie
+            try {
+                await fetch('/api/markNotificationRead', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: notification.id })
+                });
+            } catch (e) { console.error(e); }
+
+            // 2. Ukryj dropdown
+            document.getElementById('notification-dropdown').classList.remove('show');
+            
+            // 3. Odśwież listę powiadomień (usunie kliknięte)
+            fetchNotifications();
+
+            // 4. Otwórz zgłoszenie
+            if (notification.ticketId) {
+                openTicketModal(notification.ticketId);
+            }
+        }
+
+        // Zamknij dropdown gdy klikniemy poza nim
+        window.onclick = function(event) {
+            if (!event.target.closest('.notification-wrapper')) {
+                const dropdown = document.getElementById('notification-dropdown');
+                if (dropdown && dropdown.classList.contains('show')) {
+                    dropdown.classList.remove('show');
+                }
+            }
+        }
+
+        // --- Koniec Logiki Powiadomień ---
+
+
         async function fetchCategories() {
             try {
                 const response = await fetch('/api/getSettings');
@@ -223,7 +332,9 @@
             const modal = document.getElementById('ticket-modal');
             modal.classList.remove('hidden');
             document.getElementById('modal-body').innerHTML = '<p class="loading-message">Ładowanie szczegółów...</p>';
-            clearInterval(refreshInterval);
+            
+            // Zatrzymujemy auto-odświeżanie dashboardu, żeby modal nie zniknął
+            clearInterval(refreshInterval); 
 
             try {
                 const response = await fetch(`/api/getTicket?id=${ticketId}`);
@@ -237,7 +348,6 @@
         }
         
         function populateModal(ticket) {
-            // Generowanie opcji selecta z cache
             let categoryOptions = '';
             if (cachedCategories.length > 0) {
                 categoryOptions = cachedCategories.map(cat => 
@@ -517,12 +627,18 @@
 
         function startAutoRefresh() {
              clearInterval(refreshInterval);
+             clearInterval(notificationsInterval);
+             
+             // Odświeżanie zgłoszeń co minutę
              refreshInterval = setInterval(() => {
                 if (document.getElementById('ticket-modal').classList.contains('hidden') && 
                     document.getElementById('closing-modal').classList.contains('hidden')) {
                     loadTickets(document.getElementById('search-input').value);
                 }
             }, 60000);
+
+            // Odświeżanie powiadomień co minutę
+            notificationsInterval = setInterval(fetchNotifications, 60000);
         }
 
         async function initializeDashboard() {
@@ -548,9 +664,12 @@
                     document.getElementById('dashboard-title').textContent = "Wszystkie ostatnie zgłoszenia";
                 }
 
-                // Pobranie ustawień przed załadowaniem zgłoszeń
                 await fetchCategories();
                 loadTickets();
+                
+                // Inicjalizacja powiadomień
+                fetchNotifications();
+                
                 startAutoRefresh();
 
                 document.getElementById('search-btn').addEventListener('click', () => {
