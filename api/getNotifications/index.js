@@ -15,14 +15,10 @@ module.exports = async function (context, req) {
     const userEmail = clientPrincipal.userDetails;
 
     try {
-        // POPRAWKA:
-        // 1. Zamieniamy email zalogowanego usera na małe litery (bo tak zapisaliśmy w category)
-        const userEmailLower = userEmail.toLowerCase();
+        // 1. Normalizacja: małe litery + usunięcie spacji (tak jak przy zapisie)
+        const userEmailLower = userEmail.toLowerCase().trim();
 
-        context.log(`Pobieram powiadomienia dla Partycji (category): ${userEmailLower}`);
-
-        // 2. Zapytanie celuje w c.category (Partition Key)
-        // To jest wydajniejsze i gwarantuje znalezienie dokumentu zapisanego w poprzednim kroku
+        // 2. Zapytanie po kluczu partycji
         const querySpec = {
             query: "SELECT * FROM c WHERE c.type = 'notification' AND c.category = @userEmailLower AND c.isRead = false",
             parameters: [{ name: "@userEmailLower", value: userEmailLower }]
@@ -30,12 +26,19 @@ module.exports = async function (context, req) {
 
         const { resources: notifications } = await container.items.query(querySpec).fetchAll();
         
-        // Sortowanie po stronie JS (bezpieczniejsze przy różnych typach danych)
+        // Sortowanie (najnowsze na górze)
         notifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
         context.res = {
             status: 200,
-            body: notifications
+            body: notifications,
+            headers: {
+                // KLUCZOWE: Wyłączenie cache'owania w przeglądarce
+                "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+                "Surrogate-Control": "no-store"
+            }
         };
     } catch (error) {
         context.log.error("Błąd w getNotifications:", error);
