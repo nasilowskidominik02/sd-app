@@ -1,19 +1,10 @@
 const { CosmosClient } = require("@azure/cosmos");
 
-// OPTYMALIZACJA: Inicjalizacja połączenia poza funkcją
+// Inicjalizacja połączenia poza funkcją (Singleton)
 const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
 const container = client.database("ServiceDeskDB").container("Tickets");
 
-// OPTYMALIZACJA: Stałe poza funkcją
-const categoryToGroupMap = {
-    "Instalacja oprogramowania": "Pierwsza linia wsparcia",
-    "Konfiguracja oprogramowania": "Pierwsza linia wsparcia",
-    "Hardware": "Pierwsza linia wsparcia",
-    "Infrastruktura": "Administratorzy infrastruktury",
-    "Konto": "Pierwsza linia wsparcia",
-    "Aplikacje": "Administratorzy aplikacji",
-    "Inne": "Pierwsza linia wsparcia"
-};
+// UWAGA: Usunęliśmy sztywną mapę categoryToGroupMap. Teraz będziemy pobierać to z bazy.
 
 function addSystemComment(ticket, text, clientPrincipal) {
     if (!ticket.comments) {
@@ -51,7 +42,6 @@ module.exports = async function (context, req) {
             parameters: [{ name: "@ticketId", value: ticketId }]
         };
         
-        // Używamy globalnego 'container'
         const { resources: items } = await container.items.query(querySpec).fetchAll();
 
         if (items.length === 0) {
@@ -60,6 +50,7 @@ module.exports = async function (context, req) {
         let ticket = items[0];
         const originalCategory = ticket.category;
 
+        // Logika sprawdzająca status zgłoszenia
         if (ticket.status === 'Zamknięte') {
             const isReopening = changes.status && changes.status === 'Otwarte';
             if (isReopening) {
@@ -70,11 +61,14 @@ module.exports = async function (context, req) {
                 return { status: 403, body: { message: "Zgłoszenie musi mieć status 'Otwarte', aby można było je modyfikować." } };
             }
         } else {
+            // Zmiana statusu
             if (changes.status && ticket.status !== changes.status) {
                 if (['Rozwiązane', 'Odrzucone'].includes(changes.status)) {
                     addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "Zamknięte".`, clientPrincipal);
                     ticket.status = 'Zamknięte'; 
                     ticket.dates.closedAt = new Date().toISOString();
+                    
+                    // Automatyczne przypisanie osoby zamykającej, jeśli nikt nie jest przypisany
                     if (!ticket.assignedTo.person) {
                         ticket.assignedTo.person = clientPrincipal.userDetails;
                         addSystemComment(ticket, `Automatycznie przypisano zgłoszenie do: ${clientPrincipal.userDetails} (osoba zamykająca).`, clientPrincipal);
@@ -89,6 +83,7 @@ module.exports = async function (context, req) {
                 }
             }
 
+            // Zmiana osoby przypisanej
             if (changes.assignedTo && changes.assignedTo.person && ticket.assignedTo.person !== changes.assignedTo.person) {
                 addSystemComment(ticket, `Przypisano zgłoszenie do: ${changes.assignedTo.person}.`, clientPrincipal);
                 ticket.assignedTo.person = changes.assignedTo.person;
@@ -99,11 +94,26 @@ module.exports = async function (context, req) {
                 }
             }
 
+            // Zmiana kategorii (TERAZ DYNAMICZNA)
             if (changes.category && ticket.category !== changes.category) {
+                // KROK 1: Pobieramy ustawienia z bazy, aby wiedzieć jaka grupa odpowiada nowej kategorii
+                const settingsQuery = { query: "SELECT * FROM c WHERE c.id = 'global_settings'" };
+                const { resources: settingsItems } = await container.items.query(settingsQuery).fetchAll();
+                const globalSettings = settingsItems.length > 0 ? settingsItems[0] : null;
+
+                let newGroup = "Pierwsza linia wsparcia"; // Wartość domyślna (fallback)
+                
+                if (globalSettings) {
+                    const catConfig = globalSettings.categories.find(c => c.name === changes.category);
+                    if (catConfig) {
+                        newGroup = catConfig.assignedGroup;
+                    }
+                }
+
                 addSystemComment(ticket, `Zmieniono kategorię z "${ticket.category}" na "${changes.category}".`, clientPrincipal);
                 ticket.category = changes.category;
                 
-                const newGroup = categoryToGroupMap[changes.category] || "Pierwsza linia wsparcia";
+                // KROK 2: Aktualizujemy grupę na podstawie pobranej konfiguracji
                 if (newGroup !== ticket.assignedTo.group) {
                     addSystemComment(ticket, `Zmieniono grupę odpowiedzialną na: ${newGroup}.`, clientPrincipal);
                     ticket.assignedTo.group = newGroup;
@@ -119,6 +129,7 @@ module.exports = async function (context, req) {
                 }
             }
 
+            // Dodawanie komentarza
             if (changes.newComment) {
                  if (!ticket.comments) ticket.comments = [];
                  ticket.comments.push({
@@ -130,9 +141,9 @@ module.exports = async function (context, req) {
             }
         }
         
+        // Zapis zmian (z obsługą zmiany Partition Key przy zmianie kategorii)
         if (ticket.category !== originalCategory) {
             const { resource: createdItem } = await container.items.create(ticket);
-            // Używamy partition key (category) przy usuwaniu
             await container.item(ticketId, originalCategory).delete();
             context.res = { body: createdItem };
         } else {
