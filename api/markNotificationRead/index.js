@@ -7,16 +7,15 @@ module.exports = async function (context, req) {
     const header = req.headers['x-ms-client-principal'];
     if (!header) return { status: 401, body: "Unauthorized" };
     
-    const encoded = Buffer.from(header, 'base64');
-    const decoded = encoded.toString('ascii');
-    const clientPrincipal = JSON.parse(decoded);
+    // Pobieramy dane z body
+    const { id, partitionKey } = req.body;
     
-    const { id } = req.body;
-    if (!id) return { status: 400, body: "Missing ID" };
+    if (!id || !partitionKey) return { status: 400, body: "Missing ID or PartitionKey" };
 
     try {
-        // Klucz partycji dla powiadomień to e-mail użytkownika (zapisany w polu category)
-        const { resource: notification } = await container.item(id, clientPrincipal.userDetails).read();
+        // Używamy przekazanego klucza partycji (np. "Patrycja.Lach@techserv.pl")
+        // aby bezbłędnie trafić w dokument, niezależnie od tego jak user jest zalogowany
+        const { resource: notification } = await container.item(id, partitionKey).read();
 
         if (notification && notification.type === 'notification') {
             notification.isRead = true;

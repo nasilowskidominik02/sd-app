@@ -204,13 +204,17 @@
             dropdown.classList.toggle('show');
         }
 
-        async function handleNotificationClick(notification) {
+       async function handleNotificationClick(notification) {
             // 1. Oznacz jako przeczytane w bazie
+            // ZMIANA: Wysyłamy też partitionKey (category), który przyszedł z bazy
             try {
                 await fetch('/api/markNotificationRead', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: notification.id })
+                    body: JSON.stringify({ 
+                        id: notification.id,
+                        partitionKey: notification.category 
+                    })
                 });
             } catch (e) { console.error(e); }
 

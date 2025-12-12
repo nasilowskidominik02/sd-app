@@ -9,11 +9,14 @@ const ticketsContainer = database.container("Tickets");
 // Funkcja zapisuje powiadomienie w kontenerze Tickets
 async function sendNotification(recipientEmail, message, ticketId) {
     try {
+        // ZMIANA: Normalizujemy e-mail do małych liter dla klucza partycji i odbiorcy
+        const normalizedEmail = recipientEmail.toLowerCase(); // np. patrycja.lach@techserv.pl
+
         await ticketsContainer.items.create({
             id: uuidv4(),
-            type: "notification", // Ważne: oznaczamy typ dokumentu
-            category: recipientEmail, // Używamy maila jako kategorii (dla Partition Key)
-            recipient: recipientEmail,
+            type: "notification",
+            category: normalizedEmail, // Klucz partycji -> zawsze małe litery
+            recipient: recipientEmail, // Oryginalny (dla wyświetlania) lub też mały
             ticketId: ticketId,
             message: message,
             isRead: false,

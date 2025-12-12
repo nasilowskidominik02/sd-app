@@ -1,7 +1,7 @@
 const { CosmosClient } = require("@azure/cosmos");
 
 const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
-const container = client.database("ServiceDeskDB").container("Tickets"); // Tego samego kontenera używamy
+const container = client.database("ServiceDeskDB").container("Tickets");
 
 module.exports = async function (context, req) {
     const header = req.headers['x-ms-client-principal'];
@@ -13,9 +13,10 @@ module.exports = async function (context, req) {
     const userEmail = clientPrincipal.userDetails;
 
     try {
-        // Pobierz powiadomienia dla usera (category = userEmail)
+        // ZMIANA: Używamy StringEquals z trzecim parametrem 'true' (ignoruj wielkość liter)
+        // Sprawdzamy pole 'recipient', które jest bezpieczniejsze logicznie
         const querySpec = {
-            query: "SELECT * FROM c WHERE c.type = 'notification' AND c.category = @userEmail AND c.isRead = false ORDER BY c.createdAt DESC",
+            query: "SELECT * FROM c WHERE c.type = 'notification' AND StringEquals(c.recipient, @userEmail, true) AND c.isRead = false ORDER BY c.createdAt DESC",
             parameters: [{ name: "@userEmail", value: userEmail }]
         };
 
