@@ -1,6 +1,5 @@
 const { CosmosClient } = require("@azure/cosmos");
 
-// 1. OPTYMALIZACJA: Klient tworzony raz i trzymany w pamięci (Global Variable)
 const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
 const container = client.database("ServiceDeskDB").container("Tickets");
 
@@ -21,11 +20,13 @@ module.exports = async function (context, req) {
     const pageSize = 10;
     const offset = (page - 1) * pageSize;
 
-    // Twoje zoptymalizowane zapytanie wybiórcze
     let query = "SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c";
     let countQuery = "SELECT VALUE COUNT(1) FROM c";
     let whereClauses = [];
     let parameters = [];
+
+    // --- POPRAWKA: Wykluczamy dokument ustawień z listy zgłoszeń ---
+    whereClauses.push("c.id != 'global_settings'");
 
     if (!isServiceDesk) {
         whereClauses.push("c.reportingUser.email = @userEmail");
@@ -51,8 +52,6 @@ module.exports = async function (context, req) {
     const countQuerySpec = { query: countQuery, parameters: countParams }; 
     
     try {
-        // 2. OPTYMALIZACJA: Równoległe pobieranie danych i licznika (Promise.all)
-        // Zamiast czekać na Count, a potem na Items, puszczamy oba zapytania naraz.
         const [countResponse, itemsResponse] = await Promise.all([
             container.items.query(countQuerySpec).fetchAll(),
             container.items.query(querySpec).fetchAll()
