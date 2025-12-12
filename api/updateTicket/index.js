@@ -1,22 +1,21 @@
 const { CosmosClient } = require("@azure/cosmos");
 const { v4: uuidv4 } = require('uuid');
 
-// Używamy TYLKO kontenera Tickets
 const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
 const database = client.database("ServiceDeskDB");
 const ticketsContainer = database.container("Tickets");
 
-// Funkcja zapisuje powiadomienie w kontenerze Tickets
+// Funkcja zapisuje powiadomienie
 async function sendNotification(recipientEmail, message, ticketId) {
     try {
-        // ZMIANA: Normalizujemy e-mail do małych liter dla klucza partycji i odbiorcy
-        const normalizedEmail = recipientEmail.toLowerCase(); // np. patrycja.lach@techserv.pl
+        // BEZWZGLĘDNA KONWERSJA NA MAŁE LITERY
+        const normalizedEmail = recipientEmail.toString().toLowerCase().trim();
 
         await ticketsContainer.items.create({
             id: uuidv4(),
             type: "notification",
-            category: normalizedEmail, // Klucz partycji -> zawsze małe litery
-            recipient: recipientEmail, // Oryginalny (dla wyświetlania) lub też mały
+            category: normalizedEmail, // Klucz partycji - zawsze małe
+            recipient: recipientEmail, // Oryginalny e-mail (dla oka)
             ticketId: ticketId,
             message: message,
             isRead: false,
@@ -41,20 +40,19 @@ function addSystemComment(ticket, text, clientPrincipal) {
 
 module.exports = async function (context, req) {
     const header = req.headers['x-ms-client-principal'];
-    if (!header) {
-        return { status: 401, body: { message: "User not authenticated." } };
-    }
+    if (!header) return { status: 401, body: { message: "User not authenticated." } };
+    
     const encoded = Buffer.from(header, 'base64');
     const decoded = encoded.toString('ascii');
     const clientPrincipal = JSON.parse(decoded);
 
     if (!clientPrincipal.userRoles.includes('sd')) {
-        return { status: 403, body: { message: "You are not authorized to perform this action." } };
+        return { status: 403, body: { message: "Unauthorized." } };
     }
 
     const { ticketId, changes } = req.body;
     if (!ticketId || !changes) {
-        return { status: 400, body: { message: "Please provide ticketId and changes." } };
+        return { status: 400, body: { message: "Missing data." } };
     }
 
     try {
@@ -64,16 +62,15 @@ module.exports = async function (context, req) {
         };
         
         const { resources: items } = await ticketsContainer.items.query(querySpec).fetchAll();
-
-        if (items.length === 0) {
-            return { status: 404, body: { message: "Ticket not found." } };
-        }
+        if (items.length === 0) return { status: 404, body: { message: "Ticket not found." } };
+        
         let ticket = items[0];
         const originalCategory = ticket.category;
         const reportingUserEmail = ticket.reportingUser.email;
-        const isSelfUpdate = reportingUserEmail === clientPrincipal.userDetails;
+        // Ważne: sprawdzamy tożsamość ignorując wielkość liter
+        const isSelfUpdate = reportingUserEmail.toLowerCase() === clientPrincipal.userDetails.toLowerCase();
 
-        // Logika statusów i powiadomień
+        // 1. Logika ZAMKNIĘCIA
         if (ticket.status === 'Zamknięte') {
             const isReopening = changes.status && changes.status === 'Otwarte';
             if (isReopening) {
@@ -81,11 +78,12 @@ module.exports = async function (context, req) {
                  ticket.status = 'Otwarte';
                  ticket.dates.closedAt = null;
                  
-                 if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Twoje zgłoszenie #${ticketId} zostało ponownie otwarte.`, ticketId);
+                 if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Zgłoszenie #${ticketId} otwarte ponownie.`, ticketId);
             } else {
-                return { status: 403, body: { message: "Zgłoszenie musi mieć status 'Otwarte', aby można było je modyfikować." } };
+                return { status: 403, body: { message: "Error: Ticket is closed." } };
             }
         } else {
+            // 2. ZMIANA STATUSU
             if (changes.status && ticket.status !== changes.status) {
                 if (['Rozwiązane', 'Odrzucone'].includes(changes.status)) {
                     addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "Zamknięte".`, clientPrincipal);
@@ -94,21 +92,23 @@ module.exports = async function (context, req) {
                     
                     if (!ticket.assignedTo.person) {
                         ticket.assignedTo.person = clientPrincipal.userDetails;
-                        addSystemComment(ticket, `Automatycznie przypisano zgłoszenie do: ${clientPrincipal.userDetails} (osoba zamykająca).`, clientPrincipal);
                     }
 
                     if (changes.closingComment) {
                          addSystemComment(ticket, changes.closingComment, clientPrincipal);
                     }
-                    if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Twoje zgłoszenie #${ticketId} zostało zamknięte (${changes.status}).`, ticketId);
+                    
+                    if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Zgłoszenie #${ticketId} zostało zamknięte (${changes.status}).`, ticketId);
 
                 } else { 
                     addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "${changes.status}".`, clientPrincipal);
                     ticket.status = changes.status;
-                    if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Status zgłoszenia #${ticketId} zmienił się na "${changes.status}".`, ticketId);
+                    
+                    if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Zgłoszenie #${ticketId}: nowy status "${changes.status}".`, ticketId);
                 }
             }
 
+            // 3. PRZYPISANIE
             if (changes.assignedTo && changes.assignedTo.person && ticket.assignedTo.person !== changes.assignedTo.person) {
                 addSystemComment(ticket, `Przypisano zgłoszenie do: ${changes.assignedTo.person}.`, clientPrincipal);
                 ticket.assignedTo.person = changes.assignedTo.person;
@@ -116,12 +116,13 @@ module.exports = async function (context, req) {
                 if (ticket.status === 'Nieprzeczytane') {
                     addSystemComment(ticket, `Automatycznie zmieniono status z "Nieprzeczytane" na "Otwarte".`, clientPrincipal);
                     ticket.status = 'Otwarte';
-                    if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Twoje zgłoszenie #${ticketId} jest w realizacji (Otwarte).`, ticketId);
+                    
+                    if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Zgłoszenie #${ticketId} przyjęte do realizacji.`, ticketId);
                 }
             }
 
+            // 4. ZMIANA KATEGORII
             if (changes.category && ticket.category !== changes.category) {
-                // Pobieranie ustawień z tego samego kontenera Tickets
                 const settingsQuery = { query: "SELECT * FROM c WHERE c.id = 'global_settings'" };
                 const { resources: settingsItems } = await ticketsContainer.items.query(settingsQuery).fetchAll();
                 const globalSettings = settingsItems.length > 0 ? settingsItems[0] : null;
@@ -144,10 +145,12 @@ module.exports = async function (context, req) {
                 if (ticket.status === 'Nieprzeczytane') { 
                     addSystemComment(ticket, `Automatycznie zmieniono status z "Nieprzeczytane" na "Otwarte".`, clientPrincipal);
                     ticket.status = 'Otwarte';
-                    if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Twoje zgłoszenie #${ticketId} zostało zakwalifikowane.`, ticketId);
+                    
+                    if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Zgłoszenie #${ticketId} zakwalifikowane.`, ticketId);
                 }
             }
 
+            // 5. KOMENTARZ
             if (changes.newComment) {
                  if (!ticket.comments) ticket.comments = [];
                  ticket.comments.push({
@@ -156,10 +159,12 @@ module.exports = async function (context, req) {
                     timestamp: new Date().toISOString(),
                     attachment: changes.newComment.attachment || null
                 });
+                
                 if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Nowy komentarz w zgłoszeniu #${ticketId}.`, ticketId);
             }
         }
         
+        // Zapis
         if (ticket.category !== originalCategory) {
             const { resource: createdItem } = await ticketsContainer.items.create(ticket);
             await ticketsContainer.item(ticketId, originalCategory).delete();
@@ -171,6 +176,6 @@ module.exports = async function (context, req) {
 
     } catch (error) {
         context.log.error("Error in updateTicket:", error.stack);
-        context.res = { status: 500, body: { message: "Wystąpił błąd podczas aktualizacji zgłoszenia." } };
+        context.res = { status: 500, body: { message: "Error updating ticket." } };
     }
 };
