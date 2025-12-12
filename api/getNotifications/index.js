@@ -5,7 +5,9 @@ const container = client.database("ServiceDeskDB").container("Tickets");
 
 module.exports = async function (context, req) {
     const header = req.headers['x-ms-client-principal'];
-    if (!header) return { status: 401, body: [] };
+    if (!header) {
+        return { status: 401, body: [] };
+    }
     
     const encoded = Buffer.from(header, 'base64');
     const decoded = encoded.toString('ascii');
@@ -13,18 +15,30 @@ module.exports = async function (context, req) {
     const userEmail = clientPrincipal.userDetails;
 
     try {
-        // ZMIANA: Używamy StringEquals z trzecim parametrem 'true' (ignoruj wielkość liter)
-        // Sprawdzamy pole 'recipient', które jest bezpieczniejsze logicznie
+        // DEBUG: Logujemy w konsoli Azure co się dzieje
+        context.log(`Pobieram powiadomienia dla: ${userEmail}`);
+
+        // ZMIANA:
+        // 1. Używamy LOWER() zamiast StringEquals (bardziej niezawodne w SQL API)
+        // 2. Usunąłem ORDER BY na chwilę, aby wykluczyć problemy z indeksami
         const querySpec = {
-            query: "SELECT * FROM c WHERE c.type = 'notification' AND StringEquals(c.recipient, @userEmail, true) AND c.isRead = false ORDER BY c.createdAt DESC",
+            query: "SELECT * FROM c WHERE c.type = 'notification' AND LOWER(c.recipient) = LOWER(@userEmail) AND c.isRead = false",
             parameters: [{ name: "@userEmail", value: userEmail }]
         };
 
         const { resources: notifications } = await container.items.query(querySpec).fetchAll();
+        
+        // Sortujemy w JS, żeby nie obciążać bazy, jeśli indeksy są problemem
+        notifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-        context.res = { status: 200, body: notifications };
+        context.log(`Znaleziono: ${notifications.length} powiadomień.`);
+
+        context.res = {
+            status: 200,
+            body: notifications
+        };
     } catch (error) {
-        context.log.error(error);
+        context.log.error("Błąd w getNotifications:", error);
         context.res = { status: 500, body: [] };
     }
 };
