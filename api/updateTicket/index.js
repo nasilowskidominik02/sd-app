@@ -1,10 +1,28 @@
 const { CosmosClient } = require("@azure/cosmos");
+const { v4: uuidv4 } = require('uuid');
 
-// Inicjalizacja połączenia poza funkcją (Singleton)
+// Używamy TYLKO kontenera Tickets
 const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
-const container = client.database("ServiceDeskDB").container("Tickets");
+const database = client.database("ServiceDeskDB");
+const ticketsContainer = database.container("Tickets");
 
-// UWAGA: Usunęliśmy sztywną mapę categoryToGroupMap. Teraz będziemy pobierać to z bazy.
+// Funkcja zapisuje powiadomienie w kontenerze Tickets
+async function sendNotification(recipientEmail, message, ticketId) {
+    try {
+        await ticketsContainer.items.create({
+            id: uuidv4(),
+            type: "notification", // Ważne: oznaczamy typ dokumentu
+            category: recipientEmail, // Używamy maila jako kategorii (dla Partition Key)
+            recipient: recipientEmail,
+            ticketId: ticketId,
+            message: message,
+            isRead: false,
+            createdAt: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error("Błąd podczas wysyłania powiadomienia:", error);
+    }
+}
 
 function addSystemComment(ticket, text, clientPrincipal) {
     if (!ticket.comments) {
@@ -42,33 +60,35 @@ module.exports = async function (context, req) {
             parameters: [{ name: "@ticketId", value: ticketId }]
         };
         
-        const { resources: items } = await container.items.query(querySpec).fetchAll();
+        const { resources: items } = await ticketsContainer.items.query(querySpec).fetchAll();
 
         if (items.length === 0) {
             return { status: 404, body: { message: "Ticket not found." } };
         }
         let ticket = items[0];
         const originalCategory = ticket.category;
+        const reportingUserEmail = ticket.reportingUser.email;
+        const isSelfUpdate = reportingUserEmail === clientPrincipal.userDetails;
 
-        // Logika sprawdzająca status zgłoszenia
+        // Logika statusów i powiadomień
         if (ticket.status === 'Zamknięte') {
             const isReopening = changes.status && changes.status === 'Otwarte';
             if (isReopening) {
                  addSystemComment(ticket, `Zmieniono status z "Zamknięte" na "Otwarte".`, clientPrincipal);
                  ticket.status = 'Otwarte';
                  ticket.dates.closedAt = null;
+                 
+                 if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Twoje zgłoszenie #${ticketId} zostało ponownie otwarte.`, ticketId);
             } else {
                 return { status: 403, body: { message: "Zgłoszenie musi mieć status 'Otwarte', aby można było je modyfikować." } };
             }
         } else {
-            // Zmiana statusu
             if (changes.status && ticket.status !== changes.status) {
                 if (['Rozwiązane', 'Odrzucone'].includes(changes.status)) {
                     addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "Zamknięte".`, clientPrincipal);
                     ticket.status = 'Zamknięte'; 
                     ticket.dates.closedAt = new Date().toISOString();
                     
-                    // Automatyczne przypisanie osoby zamykającej, jeśli nikt nie jest przypisany
                     if (!ticket.assignedTo.person) {
                         ticket.assignedTo.person = clientPrincipal.userDetails;
                         addSystemComment(ticket, `Automatycznie przypisano zgłoszenie do: ${clientPrincipal.userDetails} (osoba zamykająca).`, clientPrincipal);
@@ -77,13 +97,15 @@ module.exports = async function (context, req) {
                     if (changes.closingComment) {
                          addSystemComment(ticket, changes.closingComment, clientPrincipal);
                     }
+                    if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Twoje zgłoszenie #${ticketId} zostało zamknięte (${changes.status}).`, ticketId);
+
                 } else { 
                     addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "${changes.status}".`, clientPrincipal);
                     ticket.status = changes.status;
+                    if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Status zgłoszenia #${ticketId} zmienił się na "${changes.status}".`, ticketId);
                 }
             }
 
-            // Zmiana osoby przypisanej
             if (changes.assignedTo && changes.assignedTo.person && ticket.assignedTo.person !== changes.assignedTo.person) {
                 addSystemComment(ticket, `Przypisano zgłoszenie do: ${changes.assignedTo.person}.`, clientPrincipal);
                 ticket.assignedTo.person = changes.assignedTo.person;
@@ -91,45 +113,38 @@ module.exports = async function (context, req) {
                 if (ticket.status === 'Nieprzeczytane') {
                     addSystemComment(ticket, `Automatycznie zmieniono status z "Nieprzeczytane" na "Otwarte".`, clientPrincipal);
                     ticket.status = 'Otwarte';
+                    if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Twoje zgłoszenie #${ticketId} jest w realizacji (Otwarte).`, ticketId);
                 }
             }
 
-            // Zmiana kategorii (TERAZ DYNAMICZNA)
             if (changes.category && ticket.category !== changes.category) {
-                // KROK 1: Pobieramy ustawienia z bazy, aby wiedzieć jaka grupa odpowiada nowej kategorii
+                // Pobieranie ustawień z tego samego kontenera Tickets
                 const settingsQuery = { query: "SELECT * FROM c WHERE c.id = 'global_settings'" };
-                const { resources: settingsItems } = await container.items.query(settingsQuery).fetchAll();
+                const { resources: settingsItems } = await ticketsContainer.items.query(settingsQuery).fetchAll();
                 const globalSettings = settingsItems.length > 0 ? settingsItems[0] : null;
 
-                let newGroup = "Pierwsza linia wsparcia"; // Wartość domyślna (fallback)
-                
+                let newGroup = "Pierwsza linia wsparcia";
                 if (globalSettings) {
                     const catConfig = globalSettings.categories.find(c => c.name === changes.category);
-                    if (catConfig) {
-                        newGroup = catConfig.assignedGroup;
-                    }
+                    if (catConfig) newGroup = catConfig.assignedGroup;
                 }
 
                 addSystemComment(ticket, `Zmieniono kategorię z "${ticket.category}" na "${changes.category}".`, clientPrincipal);
                 ticket.category = changes.category;
                 
-                // KROK 2: Aktualizujemy grupę na podstawie pobranej konfiguracji
                 if (newGroup !== ticket.assignedTo.group) {
                     addSystemComment(ticket, `Zmieniono grupę odpowiedzialną na: ${newGroup}.`, clientPrincipal);
                     ticket.assignedTo.group = newGroup;
-                    if(ticket.assignedTo.person){
-                        addSystemComment(ticket, `Usunięto przypisanie osoby z powodu zmiany grupy.`, clientPrincipal);
-                        ticket.assignedTo.person = null;
-                    }
+                    if(ticket.assignedTo.person) ticket.assignedTo.person = null;
                 }
 
                 if (ticket.status === 'Nieprzeczytane') { 
                     addSystemComment(ticket, `Automatycznie zmieniono status z "Nieprzeczytane" na "Otwarte".`, clientPrincipal);
                     ticket.status = 'Otwarte';
+                    if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Twoje zgłoszenie #${ticketId} zostało zakwalifikowane.`, ticketId);
                 }
             }
 
-            // Dodawanie komentarza
             if (changes.newComment) {
                  if (!ticket.comments) ticket.comments = [];
                  ticket.comments.push({
@@ -138,16 +153,16 @@ module.exports = async function (context, req) {
                     timestamp: new Date().toISOString(),
                     attachment: changes.newComment.attachment || null
                 });
+                if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Nowy komentarz w zgłoszeniu #${ticketId}.`, ticketId);
             }
         }
         
-        // Zapis zmian (z obsługą zmiany Partition Key przy zmianie kategorii)
         if (ticket.category !== originalCategory) {
-            const { resource: createdItem } = await container.items.create(ticket);
-            await container.item(ticketId, originalCategory).delete();
+            const { resource: createdItem } = await ticketsContainer.items.create(ticket);
+            await ticketsContainer.item(ticketId, originalCategory).delete();
             context.res = { body: createdItem };
         } else {
-            const { resource: updatedItem } = await container.items.upsert(ticket);
+            const { resource: updatedItem } = await ticketsContainer.items.upsert(ticket);
             context.res = { body: updatedItem };
         }
 
