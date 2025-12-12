@@ -12,36 +12,51 @@ module.exports = async function (context, req) {
     const encoded = Buffer.from(header, 'base64');
     const decoded = encoded.toString('ascii');
     const clientPrincipal = JSON.parse(decoded);
-    const userEmail = clientPrincipal.userDetails;
+    const rawUserEmail = clientPrincipal.userDetails;
+    
+    // Normalizujemy email (tak jak w kodzie zapisu)
+    const normalizedEmail = rawUserEmail.toLowerCase().trim();
 
     try {
-        // 1. Normalizacja: małe litery + usunięcie spacji (tak jak przy zapisie)
-        const userEmailLower = userEmail.toLowerCase().trim();
-
-        // 2. Zapytanie po kluczu partycji
+        // TESTOWE ZAPYTANIE: Pobierz jakiekolwiek 3 powiadomienia z bazy (bez filtrowania użytkownika!)
+        // To sprawdzi, czy w ogóle mamy dostęp do tych danych.
         const querySpec = {
-            query: "SELECT * FROM c WHERE c.type = 'notification' AND c.category = @userEmailLower AND c.isRead = false",
-            parameters: [{ name: "@userEmailLower", value: userEmailLower }]
+            query: "SELECT TOP 3 * FROM c WHERE c.type = 'notification'"
         };
 
-        const { resources: notifications } = await container.items.query(querySpec).fetchAll();
-        
-        // Sortowanie (najnowsze na górze)
-        notifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        // Używamy cross-partition query, żeby przeszukać wszystko
+        const { resources: anyNotifications } = await container.items.query(querySpec, { enableCrossPartitionQuery: true }).fetchAll();
+
+        // TWORZYMY RAPORT DIAGNOSTYCZNY
+        const diagnosticMessage = {
+            id: "diag-1",
+            message: `DIAGNOSTYKA: Zalogowany jako: '${rawUserEmail}'. Szukam klucza: '${normalizedEmail}'. Czy widzę cokolwiek w bazie? ${anyNotifications.length > 0 ? 'TAK' : 'NIE'}`,
+            ticketId: null,
+            createdAt: new Date().toISOString(),
+            isRead: false
+        };
+
+        // Zwracamy raport + to co znaleźliśmy w bazie (jeśli znaleźliśmy)
+        // Jeśli baza zwróciła wyniki, ale nie Twoje - zobaczysz to tutaj.
+        const results = [diagnosticMessage, ...anyNotifications];
 
         context.res = {
             status: 200,
-            body: notifications,
+            body: results,
             headers: {
-                // KLUCZOWE: Wyłączenie cache'owania w przeglądarce
-                "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0",
-                "Surrogate-Control": "no-store"
+                "Cache-Control": "no-store, no-cache",
+                "Expires": "0"
             }
         };
     } catch (error) {
-        context.log.error("Błąd w getNotifications:", error);
-        context.res = { status: 500, body: [] };
+        context.res = { 
+            status: 200, 
+            body: [{
+                id: "error",
+                message: `BŁĄD KRYTYCZNY DB: ${error.message}`,
+                createdAt: new Date().toISOString(),
+                isRead: false
+            }] 
+        };
     }
 };
