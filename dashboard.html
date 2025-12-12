@@ -12,7 +12,6 @@
 <body>
 
     <div class="app-layout">
-        <!-- Górny baner na całą szerokość -->
         <header class="app-header">
             <div class="header-title">
                 Aplikacja do zgłaszania problemów do Service Desk
@@ -23,9 +22,7 @@
             </div>
         </header>
 
-        <!-- Główna część aplikacji (pasek boczny + treść) -->
         <div class="app-body">
-            <!-- Pasek boczny z nawigacją -->
             <aside class="sidebar">
                 <nav class="sidebar-nav">
                     <a href="dashboard.html" class="nav-item active">Zgłoszenia</a>
@@ -34,7 +31,6 @@
                 </nav>
             </aside>
             
-            <!-- Główna zawartość strony -->
             <main class="main-content">
                 <div class="toolbar">
                     <h1 id="dashboard-title">Twoje ostatnie zgłoszenia</h1>
@@ -60,24 +56,18 @@
                                 <th>Zamknięto</th>
                             </tr>
                         </thead>
-                        <tbody id="tickets-tbody">
-                            <!-- Wiersze z danymi będą dynamicznie ładowane tutaj -->
-                        </tbody>
+                        <tbody id="tickets-tbody"></tbody>
                     </table>
                 </div>
-                <div id="pagination-container" class="pagination">
-                    <!-- Przyciski paginacji będą dynamicznie ładowane tutaj -->
-                </div>
+                <div id="pagination-container" class="pagination"></div>
             </main>
         </div>
 
-        <!-- Stopka Aplikacji -->
         <footer class="app-footer">
             <p>Dominik Nasiłowski 2026 (R)</p>
         </footer>
     </div>
 
-    <!-- Modal do wyświetlania i edycji zgłoszenia -->
     <div id="ticket-modal" class="modal-overlay hidden">
         <div class="modal-content">
             <header class="modal-header">
@@ -87,14 +77,11 @@
                     <button id="modal-close-btn" class="btn-close">X</button>
                 </div>
             </header>
-            <div id="modal-body" class="modal-body">
-                <!-- Struktura zostanie wstrzyknięta przez JS -->
-            </div>
+            <div id="modal-body" class="modal-body"></div>
             <p id="modal-status" class="modal-status hidden"></p>
         </div>
     </div>
 
-    <!-- NOWY MODAL: Okno do zamykania zgłoszenia -->
     <div id="closing-modal" class="modal-overlay hidden">
         <div class="modal-content" style="max-width: 600px; height: auto;">
             <header class="modal-header">
@@ -135,14 +122,26 @@
         let pendingChanges = {};
         let currentPage = 1;
         let refreshInterval;
+        let cachedCategories = []; // Cache na kategorie
 
-        // --- Funkcje pomocnicze ---
         function escapeHTML(str) {
             if (str === null || str === undefined) return '';
             return str.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
         }
 
-        // --- Paginacja ---
+        // --- Pobieranie kategorii (do selecta w modalu) ---
+        async function fetchCategories() {
+            try {
+                const response = await fetch('/api/getSettings');
+                if (response.ok) {
+                    const settings = await response.json();
+                    cachedCategories = settings.categories || [];
+                }
+            } catch (error) {
+                console.error("Błąd pobierania kategorii:", error);
+            }
+        }
+
         function renderPagination(currentPageNum, totalPages) {
             const container = document.getElementById('pagination-container');
             container.innerHTML = '';
@@ -159,7 +158,6 @@
             }
         }
 
-        // --- Ładowanie zgłoszeń do tabeli ---
         async function loadTickets(searchId = '') {
             const tbody = document.getElementById('tickets-tbody');
             tbody.innerHTML = '<tr><td colspan="10">Ładowanie zgłoszeń...</td></tr>';
@@ -181,10 +179,9 @@
                     const row = tbody.insertRow();
                     row.className = 'ticket-row';
                     row.dataset.ticketId = ticket.id;
-                    row.onclick = () => openTicketModal(ticket.id, ticket);
+                    row.onclick = () => openTicketModal(ticket.id);
 
                     const isClosed = ['Rozwiązane', 'Odrzucone', 'Zamknięte'].includes(ticket.status);
-
 
                     if (!isClosed) {
                         const now = new Date();
@@ -200,7 +197,6 @@
                     }
 
                     const statusClass = `status-${ticket.status.toLowerCase().replace(/\s/g, '-')}`;
-
                     const closedDate = isClosed && ticket.dates.closedAt ? new Date(ticket.dates.closedAt).toLocaleString('pl-PL') : '---';
 
                     row.innerHTML = `
@@ -223,7 +219,6 @@
             }
         }
 
-        // --- Logika okna modalnego ---
         async function openTicketModal(ticketId) {
             const modal = document.getElementById('ticket-modal');
             modal.classList.remove('hidden');
@@ -242,8 +237,17 @@
         }
         
         function populateModal(ticket) {
+            // Generowanie opcji selecta z cache
+            let categoryOptions = '';
+            if (cachedCategories.length > 0) {
+                categoryOptions = cachedCategories.map(cat => 
+                    `<option value="${escapeHTML(cat.name)}">${escapeHTML(cat.name)}</option>`
+                ).join('');
+            } else {
+                categoryOptions = `<option value="${escapeHTML(ticket.category)}">${escapeHTML(ticket.category)}</option>`;
+            }
+
             const modalBody = document.getElementById('modal-body');
-            // Przywracamy strukturę za każdym razem, aby uniknąć problemów z listenerami
             modalBody.innerHTML = `
                 <aside id="modal-actions-panel" class="modal-actions-panel hidden">
                     <h4>Akcje</h4>
@@ -253,13 +257,7 @@
                     <div class="form-group">
                         <label for="category-select">Zmień kategorię</label>
                         <select id="category-select" class="form-control">
-                            <option value="Inne">Inne</option>
-                            <option value="Instalacja oprogramowania">Instalacja oprogramowania</option>
-                            <option value="Konfiguracja oprogramowania">Konfiguracja oprogramowania</option>
-                            <option value="Hardware">Hardware</option>
-                            <option value="Infrastruktura">Infrastruktura</option>
-                            <option value="Konto">Konto</option>
-                            <option value="Aplikacje">Aplikacje</option>
+                            ${categoryOptions}
                         </select>
                     </div>
                 </aside>
@@ -291,7 +289,6 @@
                 <p><strong>Utworzono:</strong> ${new Date(ticket.dates.createdAt).toLocaleString('pl-PL')}</p>
                 <p><strong>SLA:</strong> ${new Date(ticket.dates.guaranteedResolutionAt).toLocaleString('pl-PL')}</p>
             `;
-            
             document.getElementById('modal-meta-info').innerHTML = metaInfo;
 
             const attachmentsContainer = document.getElementById('modal-attachments');
@@ -304,7 +301,7 @@
                     link.target = "_blank";
                     link.rel = "noopener noreferrer";
                     attachmentsContainer.appendChild(link);
-                    attachmentsContainer.appendChild(document.createElement('br')); // Nowa linia dla każdego załącznika
+                    attachmentsContainer.appendChild(document.createElement('br'));
                 });
             } else {
                 attachmentsContainer.innerText = 'Brak załączników.';
@@ -313,7 +310,7 @@
             const commentsList = document.getElementById('comments-list');
             commentsList.innerHTML = '';
             if (ticket.comments && ticket.comments.length > 0) {
-                ticket.comments.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)); // Sortuj od najstarszych do najnowszych
+                ticket.comments.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
                 ticket.comments.forEach(comment => {
                     const commentEl = document.createElement('div');
                     commentEl.className = `comment ${comment.isSystemComment ? 'system-comment' : ''}`;
@@ -330,7 +327,7 @@
                     `;
                     commentsList.appendChild(commentEl);
                 });
-                commentsList.scrollTop = commentsList.scrollHeight; // Przewiń na sam dół
+                commentsList.scrollTop = commentsList.scrollHeight; 
             } else {
                 commentsList.innerHTML = '<p>Brak komentarzy.</p>';
             }
@@ -346,7 +343,7 @@
             document.getElementById('comment-form').classList.toggle('hidden', !isServiceDesk || isClosed);
             
             document.getElementById('category-select').value = ticket.category;
-            addModalEventListeners(); // Zawsze podpinamy listenery po wyrenderowaniu
+            addModalEventListeners(); 
         }
 
         function closeModal() {
@@ -358,9 +355,7 @@
         }
 
         async function saveChanges() {
-            if (Object.keys(pendingChanges).length === 0) {
-                return;
-            }
+            if (Object.keys(pendingChanges).length === 0) return;
             
             const statusEl = document.getElementById('modal-status');
             statusEl.textContent = 'Zapisywanie...';
@@ -385,10 +380,10 @@
                 statusEl.textContent = 'Zmiany zapisane pomyślnie!';
                 statusEl.classList.add('success');
                 
-                pendingChanges = {}; // Resetuj zmiany po zapisie
+                pendingChanges = {}; 
                 currentTicketData = updatedTicket;
-                populateModal(currentTicketData); // Odśwież widok modala z nowymi danymi
-                loadTickets(); // Odśwież listę w tle
+                populateModal(currentTicketData); 
+                loadTickets(); 
 
                 setTimeout(() => {
                     statusEl.classList.add('hidden');
@@ -404,18 +399,18 @@
             document.getElementById('closing-modal').classList.remove('hidden');
         }
 
-       function closeClosingModal() {
+        function closeClosingModal() {
             const modal = document.getElementById('closing-modal');
             modal.classList.add('hidden');
             document.getElementById('closing-form').reset();
             document.getElementById('closing-modal-status').classList.add('hidden');
             document.getElementById('closing-file-name').textContent = '';
-
+            
             const submitButton = document.querySelector('#closing-form button[type="submit"]');
             if (submitButton) {
                 submitButton.disabled = false;
             }
-        }  
+        }
 
         async function handleClosingFormSubmit(event) {
             event.preventDefault();
@@ -443,7 +438,7 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ fileName: file.name, fileContent: reader.result })
                     });
-                    if (!uploadResponse.ok) throw new Error('Błąd podczas przesyłania pliku.');
+                    if (!uploadResponse.ok) throw new Error('Błąd przesyłania pliku');
                     attachmentInfo = await uploadResponse.json();
                 } catch (error) {
                     statusMessage.textContent = `Błąd: ${error.message}`;
@@ -463,7 +458,6 @@
             closeClosingModal();
         }
         
-        // NOWA, POPRAWIONA WERSJA PODPINANIA EVENTÓW
         function addModalEventListeners() {
             const modal = document.getElementById('ticket-modal');
             const closeBtn = modal.querySelector('#modal-close-btn');
@@ -531,7 +525,6 @@
             }, 60000);
         }
 
-        // --- Inicjalizacja strony ---
         async function initializeDashboard() {
             try {
                 const response = await fetch('/.auth/me');
@@ -555,10 +548,11 @@
                     document.getElementById('dashboard-title').textContent = "Wszystkie ostatnie zgłoszenia";
                 }
 
+                // Pobranie ustawień przed załadowaniem zgłoszeń
+                await fetchCategories();
                 loadTickets();
                 startAutoRefresh();
 
-                // Główne eventy strony
                 document.getElementById('search-btn').addEventListener('click', () => {
                     currentPage = 1;
                     loadTickets(document.getElementById('search-input').value);
@@ -570,7 +564,6 @@
                     }
                 });
                 
-                // Eventy dla nowego modala zamykania
                 document.getElementById('closing-modal-close-btn').addEventListener('click', closeClosingModal);
                 document.getElementById('closing-form').addEventListener('submit', handleClosingFormSubmit);
                 
@@ -583,7 +576,6 @@
                         closingFileName.textContent = '';
                     }
                 });
-
 
             } catch (error) {
                 console.error('Błąd inicjalizacji panelu:', error);
