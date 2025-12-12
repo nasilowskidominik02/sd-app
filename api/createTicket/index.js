@@ -13,11 +13,9 @@ function padNumber(num, size) {
 }
 
 /**
- * ZMODYFIKOWANO: Funkcja teraz przyjmuje liczbę godzin (int), a nie kategorię.
- * Dzięki temu jest uniwersalna i zależy od ustawień z bazy.
+ * Funkcja obliczająca SLA na podstawie godzin roboczych
  */
 function calculateSLA(startDate, hoursToAdd) {
-    // Zabezpieczenie na wypadek braku danych - domyślnie 8h
     let minutesToAdd = (hoursToAdd || 8) * 60;
     let currentDate = new Date(startDate);
 
@@ -25,7 +23,6 @@ function calculateSLA(startDate, hoursToAdd) {
     let day = currentDate.getDay();
     let hour = currentDate.getHours();
     
-    // Logika dni wolnych i godzin pracy (08:00 - 16:00)
     if (day === 6) { // Sobota
         currentDate.setDate(currentDate.getDate() + 2);
         currentDate.setHours(8, 0, 0, 0);
@@ -66,8 +63,8 @@ module.exports = async function (context, req) {
     const decoded = encoded.toString('ascii');
     const clientPrincipal = JSON.parse(decoded);
 
-    // Pobieramy kategorię z requestu (jeśli frontend ją wyśle, jeśli nie - obsłużymy to niżej)
-    const { title, content, attachment, category } = req.body;
+    // POPRAWKA: Ignorujemy 'category' z wejścia, nawet jeśli ktoś by je wysłał.
+    const { title, content, attachment } = req.body;
 
     if (!title || !content) {
         return { status: 400, body: "Please provide a title and content for the ticket." };
@@ -84,15 +81,15 @@ module.exports = async function (context, req) {
             throw new Error("Brak konfiguracji 'global_settings' w bazie danych!");
         }
 
-        // KROK 2: Znajdź wybraną kategorię w ustawieniach
-        // Jeśli frontend nie wysłał kategorii lub wysłał błędną, używamy "Inne" lub pierwszej dostępnej
-        const targetCategoryName = category || "Inne";
+        // KROK 2: Wymuszamy kategorię "Inne"
+        const targetCategoryName = "Inne";
         
+        // Szukamy konfiguracji dla "Inne" w bazie danych
         let categoryConfig = globalSettings.categories.find(c => c.name === targetCategoryName);
         
-        // Fallback: jeśli nie znaleziono kategorii, weź "Inne" lub pierwszą z listy
+        // Fallback: jeśli administrator usunął "Inne", bierzemy pierwszą dostępną kategorię
         if (!categoryConfig) {
-            categoryConfig = globalSettings.categories.find(c => c.name === "Inne") || globalSettings.categories[0];
+            categoryConfig = globalSettings.categories[0];
         }
 
         const selectedSlaHours = categoryConfig.sla;
@@ -118,12 +115,12 @@ module.exports = async function (context, req) {
         await countersContainer.items.upsert(counterDoc);
 
 
-        // KROK 4: Tworzenie zgłoszenia z dynamicznymi danymi
+        // KROK 4: Tworzenie zgłoszenia
         const now = new Date();
         const newTicket = {
             id: newTicketId, 
             title: title,
-            category: categoryConfig.name, // Używamy nazwy z konfiguracji (bezpieczniej)
+            category: categoryConfig.name, // Powinno być "Inne" (chyba że fallback zadziałał)
             status: "Nieprzeczytane",
             content: content,
             reportingUser: {
@@ -132,12 +129,11 @@ module.exports = async function (context, req) {
             },
             assignedTo: {
                 person: null,
-                group: selectedGroup // Dynamicznie przypisana grupa z konfiguracji
+                group: selectedGroup // Dynamicznie przypisana grupa dla "Inne" (np. I linia)
             },
             dates: {
                 createdAt: now.toISOString(),
                 closedAt: null,
-                // Przekazujemy liczbę godzin do kalkulatora
                 guaranteedResolutionAt: calculateSLA(now, selectedSlaHours).toISOString()
             },
             attachments: attachment ? [attachment] : [],
