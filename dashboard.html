@@ -149,14 +149,19 @@
             return str.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
         }
 
-        // --- Logika Powiadomień (NOWOŚĆ) ---
+        // --- Logika Powiadomień
         
         async function fetchNotifications() {
             try {
-                const response = await fetch('/api/getNotifications');
+                // Dodajemy timestamp do URL, aby oszukać cache przeglądarki
+                const timestamp = new Date().getTime();
+                const response = await fetch(`/api/getNotifications?t=${timestamp}`);
+                
                 if (response.ok) {
                     currentNotifications = await response.json();
                     updateNotificationUI();
+                } else {
+                    console.error("Błąd sieci przy pobieraniu powiadomień:", response.status);
                 }
             } catch (error) {
                 console.error("Błąd pobierania powiadomień:", error);
