@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Administracyjny - Service Desk App</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Lokalne style specyficzne dla panelu admina */
+        .admin-section {
+            background-color: var(--white);
+            padding: 24px;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            margin-bottom: 32px;
+        }
+        .admin-section h2 { margin-bottom: 16px; font-size: 18px; border-bottom: 1px solid var(--gray-border); padding-bottom: 8px; }
+        
+        .admin-table { width: 100%; border-collapse: collapse; }
+        .admin-table th { text-align: left; padding: 10px; background: var(--light-gray-bg); font-size: 14px; color: var(--text-light); }
+        .admin-table td { padding: 8px; border-bottom: 1px solid var(--gray-border); }
+        
+        .input-compact {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--gray-border);
+            border-radius: 4px;
+        }
+        
+        .btn-sm { padding: 6px 12px; font-size: 13px; }
+        .btn-danger { background-color: var(--danger-red); color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .btn-danger:hover { background-color: #dc2626; }
+        
+        .btn-add-row {
+            margin-top: 12px;
+            background-color: var(--medium-gray-bg);
+            color: var(--text-dark);
+            border: 1px solid var(--gray-border);
+            width: 100%;
+            padding: 8px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        .btn-add-row:hover { background-color: #d1d5db; }
+
+        .floating-save-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background-color: var(--white);
+            border-top: 1px solid var(--gray-border);
+            padding: 16px 32px;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            box-shadow: 0 -4px 6px -1px rgba(0,0,0,0.1);
+            z-index: 100;
+        }
+        
+        #save-status { margin-right: 16px; font-weight: 500; }
+    </style>
+</head>
+<body>
+
+    <div class="app-layout">
+        <header class="app-header">
+            <div class="header-title">Panel Administracyjny</div>
+            <div class="header-user-info">
+                <span id="userName">Ładowanie...</span>
+                <a href="dashboard.html" class="btn-logout" style="margin-right: 8px;">Powrót</a>
+                <a href="/.auth/logout" class="btn-logout">Wyloguj</a>
+            </div>
+        </header>
+
+        <div class="app-body">
+            <aside class="sidebar">
+                <nav class="sidebar-nav">
+                    <a href="dashboard.html" class="nav-item">Zgłoszenia</a>
+                    <a href="new-ticket.html" class="nav-item">Nowe zgłoszenie</a>
+                    <a href="admin.html" class="nav-item active">Panel Administracyjny</a> 
+                </nav>
+            </aside>
+            
+            <main class="main-content" style="padding-bottom: 80px;"> <h1>Konfiguracja Systemu</h1>
+                <p style="margin-bottom: 24px; color: var(--text-light);">Zmieniaj kategorie, czasy SLA oraz grupy przypisane do zgłoszeń.</p>
+
+                <div class="admin-section">
+                    <h2>Grupy Administratorów</h2>
+                    <p style="font-size: 13px; color: var(--text-light); margin-bottom: 12px;">Zdefiniuj grupy, do których mogą trafiać zgłoszenia. Te grupy pojawią się na liście wyboru w sekcji Kategorii.</p>
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Nazwa Grupy</th>
+                                <th style="width: 80px;">Akcje</th>
+                            </tr>
+                        </thead>
+                        <tbody id="groups-tbody"></tbody>
+                    </table>
+                    <button class="btn-add-row" onclick="addNewGroup()">+ Dodaj nową grupę</button>
+                </div>
+
+                <div class="admin-section">
+                    <h2>Kategorie i SLA</h2>
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Nazwa Kategorii</th>
+                                <th style="width: 100px;">SLA (godziny)</th>
+                                <th>Przypisana Grupa</th>
+                                <th style="width: 80px;">Akcje</th>
+                            </tr>
+                        </thead>
+                        <tbody id="categories-tbody"></tbody>
+                    </table>
+                    <button class="btn-add-row" onclick="addNewCategory()">+ Dodaj nową kategorię</button>
+                </div>
+            </main>
+        </div>
+
+        <footer class="floating-save-bar">
+            <span id="save-status" class="hidden"></span>
+            <button id="save-btn" class="btn btn-primary" onclick="saveAllSettings()">Zapisz wszystkie zmiany</button>
+        </footer>
+    </div>
+
+    <script>
+        // Globalny stan
+        let settingsData = {
+            categories: [],
+            adminGroups: []
+        };
+
+        // --- Inicjalizacja ---
+        async function initAdmin() {
+            try {
+                // 1. Sprawdzenie uprawnień
+                const authResp = await fetch('/.auth/me');
+                const authData = await authResp.json();
+                const user = authData.clientPrincipal;
+
+                if (!user || !user.userRoles.includes('sd')) {
+                    alert('Brak uprawnień. Przekierowanie...');
+                    window.location.href = 'dashboard.html';
+                    return;
+                }
+                document.getElementById('userName').textContent = user.userDetails;
+
+                // 2. Pobranie ustawień
+                const settingsResp = await fetch('/api/getSettings');
+                if(!settingsResp.ok) throw new Error('Błąd pobierania ustawień');
+                
+                const data = await settingsResp.json();
+                settingsData = data;
+                
+                // 3. Renderowanie
+                renderGroups();
+                renderCategories();
+
+            } catch (error) {
+                console.error(error);
+                alert('Wystąpił błąd podczas ładowania panelu.');
+            }
+        }
+
+        // --- Renderowanie Grup ---
+        function renderGroups() {
+            const tbody = document.getElementById('groups-tbody');
+            tbody.innerHTML = '';
+            
+            settingsData.adminGroups.forEach((groupName, index) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>
+                        <input type="text" class="input-compact group-name-input" value="${escapeHTML(groupName)}" onchange="updateGroupState(${index}, this.value)">
+                    </td>
+                    <td>
+                        <button class="btn-sm btn-danger" onclick="removeGroup(${index})">Usuń</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // --- Renderowanie Kategorii ---
+        function renderCategories() {
+            const tbody = document.getElementById('categories-tbody');
+            tbody.innerHTML = '';
+
+            // Generowanie opcji dla selecta grup (na podstawie aktualnego stanu grup)
+            let groupOptions = settingsData.adminGroups.map(g => `<option value="${escapeHTML(g)}">${escapeHTML(g)}</option>`).join('');
+
+            settingsData.categories.forEach((cat, index) => {
+                const tr = document.createElement('tr');
+                
+                // Ustawienie wybranej wartości dla selecta
+                const selectHtml = `
+                    <select class="input-compact cat-group-input" onchange="updateCategoryState(${index}, 'assignedGroup', this.value)">
+                        ${groupOptions}
+                    </select>
+                `;
+
+                tr.innerHTML = `
+                    <td>
+                        <input type="text" class="input-compact" value="${escapeHTML(cat.name)}" onchange="updateCategoryState(${index}, 'name', this.value)">
+                    </td>
+                    <td>
+                        <input type="number" class="input-compact" value="${cat.sla}" onchange="updateCategoryState(${index}, 'sla', this.value)">
+                    </td>
+                    <td>
+                        ${selectHtml}
+                    </td>
+                    <td>
+                        <button class="btn-sm btn-danger" onclick="removeCategory(${index})">Usuń</button>
+                    </td>
+                `;
+                
+                tbody.appendChild(tr);
+                // Ustawienie wartości selecta po dodaniu do DOM
+                tr.querySelector('select').value = cat.assignedGroup;
+            });
+        }
+
+        // --- Zarządzanie stanem (CRUD) ---
+
+        function addNewGroup() {
+            settingsData.adminGroups.push("Nowa Grupa");
+            renderGroups();
+            renderCategories(); // Przeładowujemy też kategorie, bo zmieniła się lista grup w selectach
+        }
+
+        function removeGroup(index) {
+            if(confirm('Czy na pewno chcesz usunąć tę grupę? Jeśli jest przypisana do kategorii, może to spowodować błędy.')) {
+                settingsData.adminGroups.splice(index, 1);
+                renderGroups();
+                renderCategories();
+            }
+        }
+
+        function updateGroupState(index, newValue) {
+            settingsData.adminGroups[index] = newValue;
+            // Tutaj można by też zaktualizować nazwy w kategoriach, ale dla uproszczenia zostawiamy to użytkownikowi
+            renderCategories(); // Odświeżamy selecty w kategoriach
+        }
+
+        function addNewCategory() {
+            const defaultGroup = settingsData.adminGroups.length > 0 ? settingsData.adminGroups[0] : "";
+            settingsData.categories.push({
+                name: "Nowa Kategoria",
+                sla: 8,
+                assignedGroup: defaultGroup
+            });
+            renderCategories();
+        }
+
+        function removeCategory(index) {
+            settingsData.categories.splice(index, 1);
+            renderCategories();
+        }
+
+        function updateCategoryState(index, field, value) {
+            if (field === 'sla') value = parseInt(value);
+            settingsData.categories[index][field] = value;
+        }
+
+        // --- Zapisywanie ---
+        async function saveAllSettings() {
+            const btn = document.getElementById('save-btn');
+            const statusEl = document.getElementById('save-status');
+            
+            btn.disabled = true;
+            statusEl.textContent = 'Zapisywanie...';
+            statusEl.className = '';
+            statusEl.classList.remove('hidden');
+
+            // Przygotowanie obiektu do wysłania
+            // Ważne: upewniamy się, że ID to global_settings i partycja to config
+            const payload = {
+                id: "global_settings",
+                _partitionKey: "config", // Ważne dla Cosmos DB jeśli to klucz partycji
+                categories: settingsData.categories,
+                adminGroups: settingsData.adminGroups
+            };
+
+            try {
+                const response = await fetch('/api/saveSettings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) throw new Error('Błąd zapisu');
+
+                statusEl.textContent = 'Zapisano pomyślnie!';
+                statusEl.style.color = 'green';
+                
+                setTimeout(() => {
+                    statusEl.classList.add('hidden');
+                    btn.disabled = false;
+                }, 2000);
+
+            } catch (error) {
+                console.error(error);
+                statusEl.textContent = 'Błąd zapisu!';
+                statusEl.style.color = 'red';
+                btn.disabled = false;
+            }
+        }
+
+        // Helper
+        function escapeHTML(str) {
+            if (str === null || str === undefined) return '';
+            return str.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+        }
+
+        // Start
+        initAdmin();
+    </script>
+</body>
+</html>
