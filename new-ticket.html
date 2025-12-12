@@ -41,13 +41,6 @@
                     </div>
                     
                     <div class="form-group">
-                        <label for="category">Kategoria</label>
-                        <select id="category" name="category" class="form-control">
-                            <option value="">Ładowanie kategorii...</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
                         <label for="content">Treść zgłoszenia</label>
                         <textarea id="content" name="content" class="form-control" rows="10" required></textarea>
                     </div>
@@ -75,33 +68,6 @@
     </div>
     
     <script>
-        // Funkcja do pobierania kategorii z backendu
-        async function loadCategories() {
-            const categorySelect = document.getElementById('category');
-            try {
-                const response = await fetch('/api/getSettings');
-                if (!response.ok) throw new Error('Błąd pobierania ustawień');
-                
-                const settings = await response.json();
-                
-                categorySelect.innerHTML = ''; // Wyczyść "Ładowanie..."
-                
-                if (settings.categories && settings.categories.length > 0) {
-                    settings.categories.forEach(cat => {
-                        const option = document.createElement('option');
-                        option.value = cat.name;
-                        option.textContent = cat.name;
-                        categorySelect.appendChild(option);
-                    });
-                } else {
-                    categorySelect.innerHTML = '<option value="Inne">Inne (Domyślna)</option>';
-                }
-            } catch (error) {
-                console.error("Błąd ładowania kategorii:", error);
-                categorySelect.innerHTML = '<option value="Inne">Inne (Tryb awaryjny)</option>';
-            }
-        }
-
         async function initializePage() {
             try {
                 const response = await fetch('/.auth/me');
@@ -118,9 +84,6 @@
                 if (isServiceDesk) {
                     document.getElementById('admin-link').classList.remove('hidden');
                 }
-                
-                // Załaduj kategorie przy starcie
-                await loadCategories();
 
             } catch (error) {
                 console.error('Błąd inicjalizacji strony:', error);
@@ -170,7 +133,7 @@
             const ticketData = {
                 title: form.elements.title.value,
                 content: form.elements.content.value,
-                category: form.elements.category.value, // Pobieramy wybraną kategorię
+                // USUNIĘTO: category. Backend sam ustawi "Inne".
                 attachment: attachmentInfo
             };
 
