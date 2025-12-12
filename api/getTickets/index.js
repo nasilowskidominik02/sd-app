@@ -5,16 +5,14 @@ const container = client.database("ServiceDeskDB").container("Tickets");
 
 module.exports = async function (context, req) {
     const header = req.headers['x-ms-client-principal'];
-    if (!header) {
-        return { status: 401, body: "User is not authenticated." };
-    }
+    if (!header) return { status: 401, body: "User is not authenticated." };
+    
     const encoded = Buffer.from(header, 'base64');
     const decoded = encoded.toString('ascii');
     const clientPrincipal = JSON.parse(decoded);
 
     const isServiceDesk = clientPrincipal.userRoles.includes('sd');
     const userEmail = clientPrincipal.userDetails;
-
     const page = parseInt(req.query.page) || 1;
     const searchId = req.query.searchId || '';
     const pageSize = 10;
@@ -25,8 +23,10 @@ module.exports = async function (context, req) {
     let whereClauses = [];
     let parameters = [];
 
-    // --- POPRAWKA: Wykluczamy dokument ustawień z listy zgłoszeń ---
+    // --- FILTRACJA: Wykluczamy ustawienia ORAZ powiadomienia ---
+    // Sprawdzamy: ID różne od settings ORAZ (typ nie istnieje LUB typ to nie powiadomienie)
     whereClauses.push("c.id != 'global_settings'");
+    whereClauses.push("(NOT IS_DEFINED(c.type) OR c.type != 'notification')");
 
     if (!isServiceDesk) {
         whereClauses.push("c.reportingUser.email = @userEmail");
@@ -57,23 +57,17 @@ module.exports = async function (context, req) {
             container.items.query(querySpec).fetchAll()
         ]);
 
-        const totalCount = countResponse.resources[0];
-        const items = itemsResponse.resources;
-
         context.res = {
             body: {
-                tickets: items,
-                totalCount: totalCount,
+                tickets: itemsResponse.resources,
+                totalCount: countResponse.resources[0],
                 currentPage: page,
-                totalPages: Math.ceil(totalCount / pageSize)
+                totalPages: Math.ceil(countResponse.resources[0] / pageSize)
             }
         };
 
     } catch (error) {
         context.log.error(error);
-        context.res = {
-            status: 500,
-            body: "Error connecting to or reading from the database"
-        };
+        context.res = { status: 500, body: "Error connecting to DB" };
     }
 };
