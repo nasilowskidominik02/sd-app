@@ -15,23 +15,23 @@ module.exports = async function (context, req) {
     const userEmail = clientPrincipal.userDetails;
 
     try {
-        // DEBUG: Logujemy w konsoli Azure co się dzieje
-        context.log(`Pobieram powiadomienia dla: ${userEmail}`);
+        // POPRAWKA:
+        // 1. Zamieniamy email zalogowanego usera na małe litery (bo tak zapisaliśmy w category)
+        const userEmailLower = userEmail.toLowerCase();
 
-        // ZMIANA:
-        // 1. Używamy LOWER() zamiast StringEquals (bardziej niezawodne w SQL API)
-        // 2. Usunąłem ORDER BY na chwilę, aby wykluczyć problemy z indeksami
+        context.log(`Pobieram powiadomienia dla Partycji (category): ${userEmailLower}`);
+
+        // 2. Zapytanie celuje w c.category (Partition Key)
+        // To jest wydajniejsze i gwarantuje znalezienie dokumentu zapisanego w poprzednim kroku
         const querySpec = {
-            query: "SELECT * FROM c WHERE c.type = 'notification' AND LOWER(c.recipient) = LOWER(@userEmail) AND c.isRead = false",
-            parameters: [{ name: "@userEmail", value: userEmail }]
+            query: "SELECT * FROM c WHERE c.type = 'notification' AND c.category = @userEmailLower AND c.isRead = false",
+            parameters: [{ name: "@userEmailLower", value: userEmailLower }]
         };
 
         const { resources: notifications } = await container.items.query(querySpec).fetchAll();
         
-        // Sortujemy w JS, żeby nie obciążać bazy, jeśli indeksy są problemem
+        // Sortowanie po stronie JS (bezpieczniejsze przy różnych typach danych)
         notifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-        context.log(`Znaleziono: ${notifications.length} powiadomień.`);
 
         context.res = {
             status: 200,
