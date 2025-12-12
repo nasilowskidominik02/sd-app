@@ -14,49 +14,35 @@ module.exports = async function (context, req) {
     const clientPrincipal = JSON.parse(decoded);
     const rawUserEmail = clientPrincipal.userDetails;
     
-    // Normalizujemy email (tak jak w kodzie zapisu)
-    const normalizedEmail = rawUserEmail.toLowerCase().trim();
+    // Normalizacja e-maila
+    const searchEmail = rawUserEmail.toLowerCase().trim();
 
     try {
-        // TESTOWE ZAPYTANIE: Pobierz jakiekolwiek 3 powiadomienia z bazy (bez filtrowania użytkownika!)
-        // To sprawdzi, czy w ogóle mamy dostęp do tych danych.
+        // Zapytanie szukające po kluczu partycji (category) ORAZ recipient (dla pewności)
         const querySpec = {
-            query: "SELECT TOP 3 * FROM c WHERE c.type = 'notification'"
+            query: `
+                SELECT * FROM c 
+                WHERE c.type = 'notification' 
+                AND c.isRead = false
+                AND (c.category = @email OR LOWER(c.recipient) = @email)
+            `,
+            parameters: [{ name: "@email", value: searchEmail }]
         };
 
-        // Używamy cross-partition query, żeby przeszukać wszystko
-        const { resources: anyNotifications } = await container.items.query(querySpec, { enableCrossPartitionQuery: true }).fetchAll();
-
-        // TWORZYMY RAPORT DIAGNOSTYCZNY
-        const diagnosticMessage = {
-            id: "diag-1",
-            message: `DIAGNOSTYKA: Zalogowany jako: '${rawUserEmail}'. Szukam klucza: '${normalizedEmail}'. Czy widzę cokolwiek w bazie? ${anyNotifications.length > 0 ? 'TAK' : 'NIE'}`,
-            ticketId: null,
-            createdAt: new Date().toISOString(),
-            isRead: false
-        };
-
-        // Zwracamy raport + to co znaleźliśmy w bazie (jeśli znaleźliśmy)
-        // Jeśli baza zwróciła wyniki, ale nie Twoje - zobaczysz to tutaj.
-        const results = [diagnosticMessage, ...anyNotifications];
+        const { resources: notifications } = await container.items.query(querySpec, { enableCrossPartitionQuery: true }).fetchAll();
+        
+        notifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
         context.res = {
             status: 200,
-            body: results,
+            body: notifications,
             headers: {
-                "Cache-Control": "no-store, no-cache",
+                "Cache-Control": "no-store, no-cache, must-revalidate",
                 "Expires": "0"
             }
         };
     } catch (error) {
-        context.res = { 
-            status: 200, 
-            body: [{
-                id: "error",
-                message: `BŁĄD KRYTYCZNY DB: ${error.message}`,
-                createdAt: new Date().toISOString(),
-                isRead: false
-            }] 
-        };
+        context.log.error("Błąd w getNotifications:", error);
+        context.res = { status: 500, body: [] };
     }
 };
