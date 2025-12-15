@@ -215,10 +215,11 @@ a:hover {
     overflow-wrap: break-word; 
 }
 
-/* Specjalne łamanie dla maili w kolumnie Odpowiedzialny */
+/* Specjalne formatowanie dla kolumny "Odpowiedzialny" (6) */
 .ticket-table td:nth-child(6) {
-    word-break: break-all; /* Brutalne łamanie długich ciągów */
-    overflow-wrap: anywhere; /* Nowoczesne łamanie w dowolnym miejscu */
+    word-break: normal; /* Nie tnij słów w połowie! */
+    overflow-wrap: break-word; 
+    line-height: 1.4; /* Odrobinę więcej oddechu między liniami maila */
 }
 
 .ticket-table thead th {
@@ -229,13 +230,13 @@ a:hover {
     font-size: 11px;
 }
 
-/* STEROWANIE SZEROKOŚCIĄ KOLUMN (RAZEM 100%) - ZMODYFIKOWANE */
+/* STEROWANIE SZEROKOŚCIĄ KOLUMN (RAZEM 100%) - SKORYGOWANE */
 .ticket-table th:nth-child(1) { width: 6%; }  /* ID */
 .ticket-table th:nth-child(2) { width: 9%; }  /* Status */
-.ticket-table th:nth-child(3) { width: 15%; } /* Tytuł - ZMNIEJSZONO z 18% */
+.ticket-table th:nth-child(3) { width: 14%; } /* Tytuł - ZMNIEJSZONO */
 .ticket-table th:nth-child(4) { width: 10%; } /* User */
 .ticket-table th:nth-child(5) { width: 9%; }  /* Kategoria */
-.ticket-table th:nth-child(6) { width: 12%; } /* Odp. - ZWIĘKSZONO z 9% */
+.ticket-table th:nth-child(6) { width: 13%; } /* Odp. - ZWIĘKSZONO dla maili */
 .ticket-table th:nth-child(7) { width: 9%; }  /* Grupa */
 .ticket-table th:nth-child(8) { width: 10%; } /* Utworzono */
 .ticket-table th:nth-child(9) { width: 10%; } /* SLA */
