@@ -8,14 +8,13 @@ const ticketsContainer = database.container("Tickets");
 // Funkcja zapisuje powiadomienie
 async function sendNotification(recipientEmail, message, ticketId) {
     try {
-        // BEZWZGLĘDNA KONWERSJA NA MAŁE LITERY
         const normalizedEmail = recipientEmail.toString().toLowerCase().trim();
 
         await ticketsContainer.items.create({
             id: uuidv4(),
             type: "notification",
-            category: normalizedEmail, // Klucz partycji - zawsze małe
-            recipient: recipientEmail, // Oryginalny e-mail (dla oka)
+            category: normalizedEmail,
+            recipient: recipientEmail,
             ticketId: ticketId,
             message: message,
             isRead: false,
@@ -67,7 +66,6 @@ module.exports = async function (context, req) {
         let ticket = items[0];
         const originalCategory = ticket.category;
         const reportingUserEmail = ticket.reportingUser.email;
-        // Ważne: sprawdzamy tożsamość ignorując wielkość liter
         const isSelfUpdate = reportingUserEmail.toLowerCase() === clientPrincipal.userDetails.toLowerCase();
 
         // 1. Logika ZAMKNIĘCIA
@@ -95,7 +93,8 @@ module.exports = async function (context, req) {
                     }
 
                     if (changes.closingComment) {
-                         addSystemComment(ticket, changes.closingComment, clientPrincipal);
+                         // Tutaj też dodajemy prefiks dla komentarza zamykającego
+                         addSystemComment(ticket, `Dodano komentarz zamknięcia: ${changes.closingComment}`, clientPrincipal);
                     }
                     
                     if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Zgłoszenie #${ticketId} zostało zamknięte (${changes.status}).`, ticketId);
@@ -150,12 +149,15 @@ module.exports = async function (context, req) {
                 }
             }
 
-            // 5. KOMENTARZ
+            // 5. KOMENTARZ (TUTAJ ZMIANA)
             if (changes.newComment) {
                  if (!ticket.comments) ticket.comments = [];
+                 
+                 // FORMATOWANIE: Dodajemy prefiks "Dodano komentarz: " do treści
+                 // Data jest zapisywana w polu timestamp i wyświetlana w nagłówku komentarza w frontendzie
                  ticket.comments.push({
                     author: clientPrincipal.userDetails,
-                    text: changes.newComment.text,
+                    text: `Dodano komentarz: ${changes.newComment.text}`, 
                     timestamp: new Date().toISOString(),
                     attachment: changes.newComment.attachment || null
                 });
