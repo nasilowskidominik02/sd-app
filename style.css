@@ -447,3 +447,24 @@ a:hover {
     #save-status { margin-right: 0; text-align: center; margin-bottom: 8px; }
     .floating-save-bar button { width: 100%; }
 }
+
+
+@media print {
+    tr {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+    
+    /* Ukrywa przyciski i nawigację na wydruku */
+    .sidebar, .app-header, .report-controls, .app-footer, .floating-save-bar {
+        display: none !important;
+    }
+    
+    .app-body, .main-content, .table-container {
+        padding: 0;
+        margin: 0;
+        overflow: visible !important;
+        height: auto !important;
+        width: 100% !important;
+    }
+}
