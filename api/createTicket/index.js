@@ -63,14 +63,23 @@ module.exports = async function (context, req) {
     const decoded = encoded.toString('ascii');
     const clientPrincipal = JSON.parse(decoded);
 
-    // POPRAWKA: Ignorujemy 'category' z wejścia, nawet jeśli ktoś by je wysłał.
-    const { title, content, attachment } = req.body;
+    // Pobieramy dane z body, w tym opcjonalne 'onBehalfOf'
+    const { title, content, attachment, onBehalfOf } = req.body;
 
     if (!title || !content) {
         return { status: 400, body: "Please provide a title and content for the ticket." };
     }
 
     try {
+        // --- LOGIKA "W IMIENIU" ---
+        let finalReportingUserEmail = clientPrincipal.userDetails;
+        
+        // Jeśli użytkownik ma rolę SD i podał inny e-mail, używamy go
+        if (clientPrincipal.userRoles.includes('sd') && onBehalfOf && onBehalfOf.trim() !== "") {
+            finalReportingUserEmail = onBehalfOf.trim();
+        }
+        // --------------------------
+
         // KROK 1: Pobierz globalne ustawienia (Kategorie i SLA)
         const settingsQuery = { query: "SELECT * FROM c WHERE c.id = 'global_settings'" };
         const { resources: settingsItems } = await ticketsContainer.items.query(settingsQuery).fetchAll();
@@ -120,16 +129,16 @@ module.exports = async function (context, req) {
         const newTicket = {
             id: newTicketId, 
             title: title,
-            category: categoryConfig.name, // Powinno być "Inne" (chyba że fallback zadziałał)
+            category: categoryConfig.name, 
             status: "Nieprzeczytane",
             content: content,
             reportingUser: {
-                email: clientPrincipal.userDetails,
-                name: clientPrincipal.userDetails 
+                email: finalReportingUserEmail, // Tutaj wpisujemy właściwego zgłaszającego
+                name: finalReportingUserEmail // Na razie używamy e-maila jako nazwy (chyba że masz bazę użytkowników)
             },
             assignedTo: {
                 person: null,
-                group: selectedGroup // Dynamicznie przypisana grupa dla "Inne" (np. I linia)
+                group: selectedGroup 
             },
             dates: {
                 createdAt: now.toISOString(),

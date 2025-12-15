@@ -35,6 +35,13 @@
                 <h1>Utwórz nowe zgłoszenie</h1>
                 
                 <form id="new-ticket-form" class="form-container">
+                    
+                    <div id="on-behalf-group" class="form-group hidden" style="background-color: #f0f9ff; padding: 15px; border: 1px dashed #3b82f6; border-radius: 8px;">
+                        <label for="onBehalfOf">Zgłoszenie w imieniu (E-mail użytkownika)</label>
+                        <input type="email" id="onBehalfOf" name="onBehalfOf" class="form-control" placeholder="np. jan.kowalski@techserv.pl (zostaw puste, jeśli zgłaszasz dla siebie)">
+                        <small style="color: var(--text-light); display: block; margin-top: 5px;">Wypełnij tylko, jeśli zakładasz zgłoszenie za kogoś innego.</small>
+                    </div>
+
                     <div class="form-group">
                         <label for="title">Tytuł zgłoszenia</label>
                         <input type="text" id="title" name="title" class="form-control" required>
@@ -81,8 +88,11 @@
                 document.getElementById('userName').textContent = data.clientPrincipal.userDetails;
 
                 const isServiceDesk = data.clientPrincipal.userRoles.includes('sd');
+                
+                // Jeśli użytkownik to SD, pokazujemy link admina i pole "w imieniu"
                 if (isServiceDesk) {
                     document.getElementById('admin-link').classList.remove('hidden');
+                    document.getElementById('on-behalf-group').classList.remove('hidden');
                 }
 
             } catch (error) {
@@ -130,10 +140,14 @@
 
             // Krok 2: Utwórz zgłoszenie
             statusMessage.textContent = 'Wysyłanie zgłoszenia...';
+            
+            // Pobieramy wartość pola "w imieniu"
+            const onBehalfOfValue = form.elements.onBehalfOf ? form.elements.onBehalfOf.value : null;
+
             const ticketData = {
                 title: form.elements.title.value,
                 content: form.elements.content.value,
-                // USUNIĘTO: category. Backend sam ustawi "Inne".
+                onBehalfOf: onBehalfOfValue, // Wysyłamy do backendu
                 attachment: attachmentInfo
             };
 
