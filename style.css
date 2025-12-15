@@ -62,7 +62,7 @@ a:hover {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 12px 24px; /* Zmniejszony padding */
+    padding: 10px 20px; /* Kompaktowy header */
     background-color: var(--white);
     border-bottom: 1px solid var(--gray-border);
     flex-shrink: 0;
@@ -70,7 +70,7 @@ a:hover {
 }
 
 .header-title {
-    font-size: 18px; /* Nieco mniejszy tytuł */
+    font-size: 18px;
     font-weight: 600;
 }
 
@@ -110,9 +110,9 @@ a:hover {
 
 /* Sidebar */
 .sidebar {
-    width: 240px;
+    width: 220px; /* Nieco węższy sidebar */
     background-color: var(--white);
-    padding: 24px;
+    padding: 20px;
     border-right: 1px solid var(--gray-border);
     flex-shrink: 0;
     display: flex;
@@ -122,12 +122,12 @@ a:hover {
 .sidebar-nav {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
 }
 
 .nav-item {
     display: block;
-    padding: 10px 14px;
+    padding: 10px 12px;
     border-radius: var(--border-radius);
     font-weight: 500;
     color: var(--text-dark);
@@ -142,14 +142,15 @@ a:hover {
 /* Main Content */
 .main-content {
     flex-grow: 1;
-    padding: 24px; /* Zmniejszony padding kontentu */
+    padding: 20px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
+    width: 100%; /* Ważne dla układu */
 }
 
 .main-content h1 {
-    font-size: 24px;
+    font-size: 22px;
     margin-bottom: 16px;
 }
 
@@ -159,7 +160,7 @@ a:hover {
     align-items: center;
     margin-bottom: 16px;
     flex-wrap: wrap;
-    gap: 16px;
+    gap: 12px;
 }
 
 .search-container {
@@ -168,65 +169,75 @@ a:hover {
 }
 
 #search-input {
-    padding: 8px 12px;
+    padding: 6px 10px;
     border: 1px solid var(--gray-border);
     border-radius: var(--border-radius);
-    min-width: 250px;
+    min-width: 200px;
+    font-size: 13px;
 }
 
 .app-footer {
-    padding: 12px 24px;
+    padding: 8px 16px;
     background-color: var(--white);
     border-top: 1px solid var(--gray-border);
     color: var(--text-light);
-    font-size: 12px;
+    font-size: 11px;
     text-align: center;
     flex-shrink: 0;
 }
 
 /* =========================================
-   3. ELEMENTY UI & TABELA (NAPRAWA SCROLLA)
+   3. TABELA (NO-SCROLL FIX)
    ========================================= */
 
-/* Tabela */
 .table-container {
     background-color: var(--white);
     border-radius: var(--border-radius);
     box-shadow: var(--shadow);
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    /* Usunięto overflow-x: auto, aby wymusić brak scrolla */
+    width: 100%;
 }
 
 .ticket-table {
     width: 100%;
     border-collapse: collapse;
-    /* Usunięto min-width, żeby tabela próbowała się zmieścić */
+    table-layout: fixed; /* KLUCZOWE: Wymusza trzymanie się szerokości */
 }
 
 .ticket-table th, .ticket-table td {
-    padding: 10px 12px; /* ZMNIEJSZONY PADDING (było 16px) */
+    padding: 8px 6px; /* Bardzo mały padding */
     text-align: left;
     border-bottom: 1px solid var(--gray-border);
-    font-size: 13px; /* ZMNIEJSZONA CZCIONKA (było domyślnie ok 16px) */
-    white-space: nowrap; /* Domyślnie nie zawijaj (dobre dla dat i statusów) */
-}
-
-/* WAŻNE: Pozwalamy na zawijanie tekstu w Tytule (kolumna 3) i Grupie (kolumna 7) */
-/* To zapobiegnie rozpychaniu tabeli na szerokość */
-.ticket-table td:nth-child(3), 
-.ticket-table td:nth-child(7) {
-    white-space: normal;
-    min-width: 150px;
-    max-width: 300px;
+    font-size: 12px; /* Mniejsza czcionka dla zagęszczenia */
+    vertical-align: top; /* Tekst zaczyna się od góry */
+    
+    /* Złamanie tekstu */
+    white-space: normal; 
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
 .ticket-table thead th {
     background-color: var(--light-gray-bg);
-    font-weight: 600;
-    font-size: 12px;
+    font-weight: 700;
     color: var(--text-light);
     text-transform: uppercase;
+    font-size: 11px;
 }
+
+/* STEROWANIE SZEROKOŚCIĄ KOLUMN (RAZEM 100%) */
+.ticket-table th:nth-child(1) { width: 6%; }  /* ID */
+.ticket-table th:nth-child(2) { width: 9%; }  /* Status */
+.ticket-table th:nth-child(3) { width: 18%; } /* Tytuł - najszerszy */
+.ticket-table th:nth-child(4) { width: 10%; } /* User */
+.ticket-table th:nth-child(5) { width: 9%; }  /* Kategoria */
+.ticket-table th:nth-child(6) { width: 9%; }  /* Odp. */
+.ticket-table th:nth-child(7) { width: 9%; }  /* Grupa */
+.ticket-table th:nth-child(8) { width: 10%; } /* Utworzono */
+.ticket-table th:nth-child(9) { width: 10%; } /* SLA */
+.ticket-table th:nth-child(10){ width: 10%; } /* Zamknięto */
+
 
 /* SLA Highlighting */
 .ticket-table tbody tr.sla-warning { background-color: #fef9c3; font-weight: 500; }
@@ -236,14 +247,18 @@ a:hover {
 .ticket-table tbody tr:hover { background-color: #f9fafb; }
 .ticket-table tbody tr.ticket-row { cursor: pointer; }
 
-/* Status Badges */
+/* Status Badges - mniejsze */
 .status-badge {
-    display: inline-block; padding: 2px 8px; border-radius: 9999px;
-    font-weight: 500; font-size: 11px; color: var(--text-dark); text-transform: capitalize;
+    display: inline-block; padding: 2px 6px; border-radius: 4px;
+    font-weight: 600; font-size: 10px; color: var(--text-dark); text-transform: uppercase;
 }
 .status-badge.status-nieprzeczytane { background-color: var(--status-nieprzeczytane); }
 .status-badge.status-otwarte { background-color: var(--status-otwarte); }
 .status-badge.status-zamknięte { background-color: var(--status-zamknięte); color: white; }
+
+/* =========================================
+   4. MODALE & UI
+   ========================================= */
 
 /* Login / Unauthorized */
 .login-container {
@@ -266,10 +281,10 @@ a:hover {
 .logout-button { background-color: var(--danger-red); color: var(--white); border: none; padding: 12px; border-radius: var(--border-radius); display: inline-block; margin-top: 16px;}
 
 /* Paginacja */
-.pagination { margin-top: 24px; display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.pagination { margin-top: 16px; display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; }
 .page-btn {
-    border: 1px solid var(--gray-border); background-color: var(--white); padding: 6px 12px;
-    border-radius: var(--border-radius); cursor: pointer; font-size: 13px;
+    border: 1px solid var(--gray-border); background-color: var(--white); padding: 4px 10px;
+    border-radius: var(--border-radius); cursor: pointer; font-size: 12px;
 }
 .page-btn.active { background-color: var(--primary-blue); color: var(--white); border-color: var(--primary-blue); }
 
@@ -296,9 +311,7 @@ a:hover {
 .form-status.success { color: #155724; }
 .form-status.error { color: #721c24; }
 
-/* =========================================
-   4. MODALE & KOMENTARZE (PRZYWRÓCONE)
-   ========================================= */
+/* Modale */
 .modal-overlay {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background-color: rgba(0, 0, 0, 0.5); display: flex;
@@ -339,94 +352,32 @@ a:hover {
 .modal-status.success { color: #155724; background-color: #d4edda; }
 .modal-status.error { color: #721c24; background-color: #f8d7da; }
 
-/* PRZYWRÓCONE STYLE KOMENTARZY */
+/* Komentarze */
 .comments-section {
-    margin-top: 32px;
-    display: flex;
-    flex-direction: column;
-    flex-grow: 1;
-    min-height: 0; 
+    margin-top: 32px; display: flex; flex-direction: column; flex-grow: 1; min-height: 0; 
 }
 .comments-list {
-    flex-grow: 1;
-    overflow-y: auto; /* Scrollowaanie, gdy jest dużo komentarzy */
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    margin-bottom: 24px;
-    padding-right: 10px; 
+    flex-grow: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px; padding-right: 10px; 
 }
-
 .comment {
-    background-color: #f9fafb;
-    border: 1px solid var(--gray-border);
-    border-radius: var(--border-radius);
-    padding: 16px;
+    background-color: #f9fafb; border: 1px solid var(--gray-border); border-radius: var(--border-radius); padding: 16px;
 }
-
-.comment.system-comment {
-    background-color: #fffbe6; 
-    border-left: 4px solid #ffc107; 
-}
-
-.comment-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    margin-bottom: 8px;
-}
-
-.comment-date {
-    font-size: 12px;
-    color: var(--text-light);
-}
-
-.comment-text {
-    line-height: 1.6;
-    word-break: break-word;
-    font-size: 14px;
-}
-
-.comment.system-comment .comment-text {
-    font-style: italic; 
-    color: var(--text-light);
-}
-
-.comment-attachment {
-    margin-top: 8px;
-    padding: 8px;
-    background-color: var(--light-gray-bg);
-    border-radius: var(--border-radius);
-    border: 1px solid var(--gray-border);
-}
-
-.comment-form {
-    margin-top: auto;
-    flex-shrink: 0;
-}
-
+.comment.system-comment { background-color: #fffbe6; border-left: 4px solid #ffc107; }
+.comment-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.comment-date { font-size: 12px; color: var(--text-light); }
+.comment-text { line-height: 1.6; word-break: break-word; font-size: 14px; }
+.comment.system-comment .comment-text { font-style: italic; color: var(--text-light); }
+.comment-attachment { margin-top: 8px; padding: 8px; background-color: var(--light-gray-bg); border-radius: var(--border-radius); border: 1px solid var(--gray-border); }
+.comment-form { margin-top: auto; flex-shrink: 0; }
 .comment-form textarea {
-    width: 100%;
-    min-height: 80px;
-    padding: 12px;
-    border: 1px solid var(--gray-border);
-    border-radius: var(--border-radius);
-    resize: vertical;
-    margin-bottom: 8px;
-    font-family: inherit;
+    width: 100%; min-height: 80px; padding: 12px; border: 1px solid var(--gray-border);
+    border-radius: var(--border-radius); resize: vertical; margin-bottom: 8px; font-family: inherit;
 }
-.comment-form button {
-    float: right;
-}
-
-/* Radio groups in close modal */
+.comment-form button { float: right; }
 .radio-group { display: flex; gap: 24px; margin-bottom: 16px; }
 .radio-group label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 
-
-/* =========================================
-   5. POWIADOMIENIA
-   ========================================= */
+/* Powiadomienia */
 .notification-wrapper { position: relative; margin-right: 16px; display: flex; align-items: center; }
 .notification-btn { background: none; border: none; cursor: pointer; padding: 8px; position: relative; color: var(--text-dark); }
 .notification-btn:hover { color: var(--primary-blue); background-color: var(--light-gray-bg); border-radius: 50%; }
@@ -449,22 +400,10 @@ a:hover {
 .notification-time { font-size: 11px; color: var(--text-light); }
 .notification-empty { padding: 24px; text-align: center; color: var(--text-light); font-size: 13px; }
 
-/* =================================================================
-   6. RESPONSYWNOŚĆ (MEDIA QUERIES)
-   ================================================================= */
+/* =========================================
+   5. RESPONSYWNOŚĆ (MOBILE)
+   ========================================= */
 
-/* TABLETY I MAŁE LAPTOPY (Poniżej 1400px - tu naprawiamy Twój problem) */
-@media (max-width: 1400px) {
-    .sidebar { width: 200px; } /* Nieco węższy sidebar */
-    .main-content { padding: 20px; }
-    
-    .ticket-table th, .ticket-table td {
-        padding: 8px 10px; /* Jeszcze mniejszy padding */
-        font-size: 12px;
-    }
-}
-
-/* TELEFONY I TABLETY PIONOWO (Poniżej 768px) */
 @media (max-width: 768px) {
     .app-layout { height: auto; min-height: 100vh; }
     .app-body { flex-direction: column; height: auto; overflow: visible; }
@@ -475,31 +414,28 @@ a:hover {
     .header-user-info { width: 100%; justify-content: space-between; }
     .notification-dropdown { right: -100px; }
 
-    /* Sidebar -> Topbar */
-    .sidebar {
-        width: 100%; border-right: none; border-bottom: 1px solid var(--gray-border);
-        padding: 12px; overflow-x: auto;
-    }
+    /* Sidebar */
+    .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--gray-border); padding: 12px; overflow-x: auto; }
     .sidebar-nav { flex-direction: row; gap: 8px; }
     .nav-item { white-space: nowrap; padding: 8px 12px; font-size: 13px; }
 
-    /* Main Content */
+    /* Content */
     .main-content { padding: 16px; height: auto; overflow: visible; padding-bottom: 100px; }
-    .main-content h1 { font-size: 22px; }
-
-    /* Toolbar */
+    .main-content h1 { font-size: 20px; }
     .toolbar { flex-direction: column; align-items: stretch; }
     .search-container { flex-direction: column; }
     #search-input { min-width: 0; width: 100%; }
     #search-btn { width: 100%; }
+
+    /* Tabela na mobile - tu jednak musi być scroll, bo nie zmieścimy 10 kolumn na 300px */
+    .table-container { overflow-x: auto; display: block; }
+    .ticket-table { min-width: 800px; }
 
     /* Modal Mobile */
     .modal-content { width: 100%; height: 100%; max-width: none; border-radius: 0; }
     .modal-body { flex-direction: column; overflow-y: auto; }
     .modal-actions-panel { width: 100%; border-right: none; border-bottom: 1px solid var(--gray-border); padding: 16px; height: auto; }
     .modal-details-panel { padding: 16px; overflow-y: visible; }
-    
-    /* Pasek zapisu Admin */
     .floating-save-bar { padding: 12px; flex-direction: column; gap: 8px; align-items: stretch; }
     #save-status { margin-right: 0; text-align: center; margin-bottom: 8px; }
     .floating-save-bar button { width: 100%; }
