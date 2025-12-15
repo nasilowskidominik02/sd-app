@@ -38,7 +38,7 @@
         .sla-good { color: var(--status-otwarte); font-weight: bold; }
         
         .export-buttons {
-            margin-left: auto; /* Przesuwa przyciski eksportu na prawo */
+            margin-left: auto;
             display: flex;
             gap: 8px;
         }
@@ -111,9 +111,9 @@
                 </div>
 
                 <div class="table-container" id="report-results">
-                    <div style="padding: 16px; font-weight: bold; border-bottom: 1px solid var(--gray-border); display:none;" id="report-header-print">
-                        Raport Service Desk
-                    </div>
+                    <div style="padding: 24px; border-bottom: 2px solid var(--gray-border); display:none; margin-bottom: 16px;" id="report-header-print">
+                        </div>
+
                     <table class="ticket-table report-table">
                         <thead>
                             <tr>
@@ -127,7 +127,8 @@
                             <tr><td colspan="4" style="text-align:center; padding: 20px;">Wybierz parametry i kliknij Generuj.</td></tr>
                         </tbody>
                     </table>
-                    <div style="padding: 16px; font-size: 12px; color: #666; display:none;" id="report-footer-print">
+                    
+                    <div style="padding: 16px; font-size: 12px; color: #666; display:none; margin-top: 16px; border-top: 1px solid var(--gray-border);" id="report-footer-print">
                         Wygenerowano: <span id="report-generated-date"></span>
                     </div>
                 </div>
@@ -136,7 +137,6 @@
     </div>
 
     <script>
-        // Inicjalizacja
         (async function() {
             const resp = await fetch('/.auth/me');
             const data = await resp.json();
@@ -146,7 +146,7 @@
                 return;
             }
             document.getElementById('userName').textContent = user.userDetails;
-            updateDatesFromPeriod(); // Ustaw domyślne daty
+            updateDatesFromPeriod(); 
         })();
 
         function updateDatesFromPeriod() {
@@ -154,7 +154,7 @@
             const startInput = document.getElementById('date-start');
             const endInput = document.getElementById('date-end');
             
-            if (period === 'custom') return; // Nie ruszamy dat
+            if (period === 'custom') return;
 
             const now = new Date();
             let start = new Date();
@@ -212,9 +212,7 @@
                     const tr = document.createElement('tr');
                     const widthPct = (row.count / maxCount) * 100;
                     const slaClass = row.slaBreachPercent > 0 ? 'sla-bad' : 'sla-good';
-                    const slaText = row.slaBreachPercent > 0 
-                        ? `${row.slaBreachPercent}%` 
-                        : `0% (OK)`;
+                    const slaText = row.slaBreachPercent > 0 ? `${row.slaBreachPercent}%` : `0% (OK)`;
 
                     tr.innerHTML = `
                         <td><strong>${escapeHTML(row.name)}</strong></td>
@@ -228,7 +226,6 @@
                     tbody.appendChild(tr);
                 });
 
-                // Aktualizacja daty generowania (dla wydruku)
                 document.getElementById('report-generated-date').textContent = new Date().toLocaleString();
 
             } catch (error) {
@@ -242,59 +239,82 @@
             return str.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
 
-        // --- FUNKCJE EKSPORTU ---
+        // --- ZMODYFIKOWANE FUNKCJE EKSPORTU ---
+
+        function getReportMeta() {
+            const start = document.getElementById('date-start').value;
+            const end = document.getElementById('date-end').value;
+            const typeSelect = document.getElementById('type-select');
+            const typeText = typeSelect.options[typeSelect.selectedIndex].text;
+            return { start, end, typeText };
+        }
 
         function downloadPDF() {
-            // Przygotowanie elementu do druku
             const element = document.getElementById('report-results');
             const header = document.getElementById('report-header-print');
             const footer = document.getElementById('report-footer-print');
             
-            // Tymczasowo pokazujemy nagłówek i stopkę w DOM dla generatora PDF
+            // 1. Uzupełnienie danych w nagłówku PDF
+            const meta = getReportMeta();
+            header.innerHTML = `
+                <h2 style="margin: 0 0 8px 0; font-size: 24px; color: #1f2937;">Raport Service Desk</h2>
+                <div style="font-size: 14px; color: #4b5563;">
+                    <p style="margin: 4px 0;"><strong>Typ raportu:</strong> ${meta.typeText}</p>
+                    <p style="margin: 4px 0;"><strong>Zakres dat:</strong> ${meta.start} — ${meta.end}</p>
+                </div>
+            `;
+
+            // Pokazujemy nagłówek na chwilę
             header.style.display = 'block';
             footer.style.display = 'block';
 
             const opt = {
                 margin:       0.5,
-                filename:     `Raport_ServiceDesk_${new Date().toISOString().slice(0,10)}.pdf`,
+                filename:     `Raport_${meta.start}_${meta.end}.pdf`,
                 image:        { type: 'jpeg', quality: 0.98 },
-                html2canvas:  { scale: 2 }, // Wyższa jakość
+                html2canvas:  { scale: 2 },
                 jsPDF:        { unit: 'in', format: 'letter', orientation: 'landscape' }
             };
 
-            // Generowanie
             html2pdf().set(opt).from(element).save().then(() => {
-                // Po wygenerowaniu ukrywamy nagłówek/stopkę z powrotem
                 header.style.display = 'none';
                 footer.style.display = 'none';
             });
         }
 
         function downloadHTML() {
-            const tableContent = document.getElementById('report-results').innerHTML;
-            
-            // Tworzymy prosty dokument HTML z zawartością tabeli i stylami
+            // Pobieramy samą tabelę (bez ukrytych divów z PDF)
+            const table = document.querySelector('#report-results table').outerHTML;
+            const meta = getReportMeta();
+            const now = new Date().toLocaleString();
+
             const htmlContent = `
                 <!DOCTYPE html>
-                <html>
+                <html lang="pl">
                 <head>
                     <meta charset="UTF-8">
                     <title>Raport Service Desk</title>
                     <style>
-                        body { font-family: sans-serif; padding: 20px; }
-                        table { width: 100%; border-collapse: collapse; }
-                        th, td { padding: 10px; border: 1px solid #ddd; text-align: left; }
-                        th { background-color: #f4f6f8; }
-                        .sla-bad { color: red; }
-                        .sla-good { color: green; }
-                        /* Uproszczone paski dla eksportu HTML */
-                        .bar-container { display: none; } 
+                        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; color: #333; }
+                        h1 { color: #2563eb; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+                        .meta { background: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 30px; border: 1px solid #e5e7eb; }
+                        .meta p { margin: 5px 0; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                        th, td { padding: 12px; border: 1px solid #ddd; text-align: left; }
+                        th { background-color: #f3f4f6; font-weight: 600; }
+                        .sla-bad { color: #dc2626; font-weight: bold; }
+                        .sla-good { color: #16a34a; font-weight: bold; }
+                        .bar-container { display: none; } /* Ukrywamy paski w prostym HTML */
                     </style>
                 </head>
                 <body>
-                    <h2>Raport Service Desk</h2>
-                    <p>Wygenerowano: ${new Date().toLocaleString()}</p>
-                    ${tableContent}
+                    <h1>Raport Service Desk</h1>
+                    <div class="meta">
+                        <p><strong>Typ raportu:</strong> ${meta.typeText}</p>
+                        <p><strong>Zakres dat:</strong> ${meta.start} do ${meta.end}</p>
+                        <p><strong>Wygenerowano:</strong> ${now}</p>
+                    </div>
+                    ${table}
                 </body>
                 </html>
             `;
@@ -303,7 +323,7 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `Raport_ServiceDesk_${new Date().toISOString().slice(0,10)}.html`;
+            a.download = `Raport_${meta.start}_${meta.end}.html`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
