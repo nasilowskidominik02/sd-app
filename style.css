@@ -62,7 +62,7 @@ a:hover {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 10px 20px; /* Kompaktowy header */
+    padding: 10px 20px;
     background-color: var(--white);
     border-bottom: 1px solid var(--gray-border);
     flex-shrink: 0;
@@ -110,7 +110,7 @@ a:hover {
 
 /* Sidebar */
 .sidebar {
-    width: 220px; /* Nieco węższy sidebar */
+    width: 220px;
     background-color: var(--white);
     padding: 20px;
     border-right: 1px solid var(--gray-border);
@@ -146,7 +146,7 @@ a:hover {
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    width: 100%; /* Ważne dla układu */
+    width: 100%;
 }
 
 .main-content h1 {
@@ -187,35 +187,38 @@ a:hover {
 }
 
 /* =========================================
-   3. TABELA (NO-SCROLL FIX)
+   3. TABELA (FIXED LAYOUT & WRAPPING)
    ========================================= */
 
 .table-container {
     background-color: var(--white);
     border-radius: var(--border-radius);
     box-shadow: var(--shadow);
-    /* Usunięto overflow-x: auto, aby wymusić brak scrolla */
     width: 100%;
 }
 
 .ticket-table {
     width: 100%;
     border-collapse: collapse;
-    table-layout: fixed; /* KLUCZOWE: Wymusza trzymanie się szerokości */
+    table-layout: fixed; /* Wymusza szerokości kolumn */
 }
 
 .ticket-table th, .ticket-table td {
-    padding: 8px 6px; /* Bardzo mały padding */
+    padding: 8px 6px;
     text-align: left;
     border-bottom: 1px solid var(--gray-border);
-    font-size: 12px; /* Mniejsza czcionka dla zagęszczenia */
-    vertical-align: top; /* Tekst zaczyna się od góry */
+    font-size: 12px;
+    vertical-align: top;
     
-    /* Złamanie tekstu */
-    white-space: normal; 
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-    word-break: break-word;
+    /* Domyślne łamanie tekstu */
+    white-space: normal;
+    overflow-wrap: break-word; 
+}
+
+/* Specjalne łamanie dla maili w kolumnie Odpowiedzialny */
+.ticket-table td:nth-child(6) {
+    word-break: break-all; /* Brutalne łamanie długich ciągów */
+    overflow-wrap: anywhere; /* Nowoczesne łamanie w dowolnym miejscu */
 }
 
 .ticket-table thead th {
@@ -226,13 +229,13 @@ a:hover {
     font-size: 11px;
 }
 
-/* STEROWANIE SZEROKOŚCIĄ KOLUMN (RAZEM 100%) */
+/* STEROWANIE SZEROKOŚCIĄ KOLUMN (RAZEM 100%) - ZMODYFIKOWANE */
 .ticket-table th:nth-child(1) { width: 6%; }  /* ID */
 .ticket-table th:nth-child(2) { width: 9%; }  /* Status */
-.ticket-table th:nth-child(3) { width: 18%; } /* Tytuł - najszerszy */
+.ticket-table th:nth-child(3) { width: 15%; } /* Tytuł - ZMNIEJSZONO z 18% */
 .ticket-table th:nth-child(4) { width: 10%; } /* User */
 .ticket-table th:nth-child(5) { width: 9%; }  /* Kategoria */
-.ticket-table th:nth-child(6) { width: 9%; }  /* Odp. */
+.ticket-table th:nth-child(6) { width: 12%; } /* Odp. - ZWIĘKSZONO z 9% */
 .ticket-table th:nth-child(7) { width: 9%; }  /* Grupa */
 .ticket-table th:nth-child(8) { width: 10%; } /* Utworzono */
 .ticket-table th:nth-child(9) { width: 10%; } /* SLA */
@@ -247,7 +250,7 @@ a:hover {
 .ticket-table tbody tr:hover { background-color: #f9fafb; }
 .ticket-table tbody tr.ticket-row { cursor: pointer; }
 
-/* Status Badges - mniejsze */
+/* Status Badges */
 .status-badge {
     display: inline-block; padding: 2px 6px; border-radius: 4px;
     font-weight: 600; font-size: 10px; color: var(--text-dark); text-transform: uppercase;
@@ -400,9 +403,9 @@ a:hover {
 .notification-time { font-size: 11px; color: var(--text-light); }
 .notification-empty { padding: 24px; text-align: center; color: var(--text-light); font-size: 13px; }
 
-/* =========================================
-   5. RESPONSYWNOŚĆ (MOBILE)
-   ========================================= */
+/* =================================================================
+   5. RESPONSYWNOŚĆ (MEDIA QUERIES)
+   ================================================================= */
 
 @media (max-width: 768px) {
     .app-layout { height: auto; min-height: 100vh; }
@@ -427,7 +430,7 @@ a:hover {
     #search-input { min-width: 0; width: 100%; }
     #search-btn { width: 100%; }
 
-    /* Tabela na mobile - tu jednak musi być scroll, bo nie zmieścimy 10 kolumn na 300px */
+    /* Tabela Mobile */
     .table-container { overflow-x: auto; display: block; }
     .ticket-table { min-width: 800px; }
 
