@@ -148,6 +148,16 @@
             return str.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
         }
 
+        // Pomocnicza funkcja do formatowania daty w dwóch liniach
+        function formatDateTwoLines(dateStr) {
+            if (!dateStr) return '---';
+            const dateObj = new Date(dateStr);
+            const datePart = dateObj.toLocaleDateString('pl-PL');
+            const timePart = dateObj.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+            // Zwracamy HTML: Data <br> Godzina (na szaro i trochę mniejsza)
+            return `${datePart}<br><span style="color:var(--text-light); font-size: 0.9em">${timePart}</span>`;
+        }
+
         async function fetchNotifications() {
             try {
                 const timestamp = new Date().getTime();
@@ -299,24 +309,31 @@
                     }
 
                     const statusClass = `status-${ticket.status.toLowerCase().replace(/\s/g, '-')}`;
-                    const closedDate = isClosed && ticket.dates.closedAt ? new Date(ticket.dates.closedAt).toLocaleString('pl-PL') : '---';
-
-                    // NOWOŚĆ: Automatyczne łamanie maila przed @
+                    
+                    // Łamanie maila użytkownika (zgłaszającego)
+                    const reportingUserDisplay = escapeHTML(ticket.reportingUser.name).replace('@', '<br>@');
+                    
+                    // Łamanie maila osoby odpowiedzialnej
                     const personDisplay = ticket.assignedTo.person 
                         ? escapeHTML(ticket.assignedTo.person).replace('@', '<br>@') 
                         : '---';
+
+                    // Formatowanie dat w dwóch liniach
+                    const createdDisplay = formatDateTwoLines(ticket.dates.createdAt);
+                    const slaDisplay = formatDateTwoLines(ticket.dates.guaranteedResolutionAt);
+                    const closedDisplay = formatDateTwoLines(ticket.dates.closedAt);
 
                     row.innerHTML = `
                         <td>${escapeHTML(ticket.id)}</td>
                         <td><span class="status-badge ${statusClass}">${escapeHTML(ticket.status)}</span></td>
                         <td>${escapeHTML(ticket.title)}</td>
-                        <td>${escapeHTML(ticket.reportingUser.name)}</td>
+                        <td>${reportingUserDisplay}</td>
                         <td>${escapeHTML(ticket.category)}</td>
                         <td>${personDisplay}</td>
                         <td>${escapeHTML(ticket.assignedTo.group)}</td>
-                        <td>${new Date(ticket.dates.createdAt).toLocaleString('pl-PL')}</td>
-                        <td>${new Date(ticket.dates.guaranteedResolutionAt).toLocaleString('pl-PL')}</td>
-                        <td>${closedDate}</td>
+                        <td>${createdDisplay}</td>
+                        <td>${slaDisplay}</td>
+                        <td>${closedDisplay}</td>
                     `;
                 });
                 renderPagination(data.currentPage, totalPages);
@@ -626,6 +643,7 @@
              clearInterval(refreshInterval);
              clearInterval(notificationsInterval);
              
+             // Odświeżanie zgłoszeń co minutę
              refreshInterval = setInterval(() => {
                 if (document.getElementById('ticket-modal').classList.contains('hidden') && 
                     document.getElementById('closing-modal').classList.contains('hidden')) {
@@ -633,6 +651,7 @@
                 }
             }, 60000);
 
+            // Odświeżanie powiadomień co minutę
             notificationsInterval = setInterval(fetchNotifications, 60000);
         }
 
@@ -662,6 +681,7 @@
                 await fetchCategories();
                 loadTickets();
                 
+                // Inicjalizacja powiadomień
                 fetchNotifications();
                 
                 startAutoRefresh();
