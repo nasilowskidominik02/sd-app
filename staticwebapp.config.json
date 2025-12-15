@@ -3,6 +3,14 @@
     {
       "route": "/dashboard.html",
       "allowedRoles": ["user", "sd"]
+    },
+    {
+      "route": "/admin.html",
+      "allowedRoles": ["sd"]
+    },
+    {
+      "route": "/reports.html",
+      "allowedRoles": ["sd"]
     }
   ],
   "responseOverrides": {
@@ -16,4 +24,3 @@
     }
   }
 }
-

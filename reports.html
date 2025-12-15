@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raporty - Service Desk App</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        .report-controls {
+            background-color: var(--white);
+            padding: 24px;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            margin-bottom: 24px;
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            align-items: flex-end;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .control-group label {
+            font-weight: 500;
+            font-size: 14px;
+        }
+        .report-table th { text-align: left; padding: 12px; background: var(--light-gray-bg); }
+        .report-table td { padding: 12px; border-bottom: 1px solid var(--gray-border); }
+        .bar-container { width: 100px; height: 6px; background: #eee; border-radius: 3px; overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 8px;}
+        .bar-fill { height: 100%; background: var(--primary-blue); }
+        .sla-bad { color: var(--danger-red); font-weight: bold; }
+        .sla-good { color: var(--status-otwarte); font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div class="app-layout">
+        <header class="app-header">
+            <div class="header-title">Centrum Raportowania</div>
+            <div class="header-user-info">
+                <span id="userName">Ładowanie...</span>
+                <a href="dashboard.html" class="btn-logout" style="margin-right: 8px;">Powrót</a>
+            </div>
+        </header>
+
+        <div class="app-body">
+            <aside class="sidebar">
+                <nav class="sidebar-nav">
+                    <a href="dashboard.html" class="nav-item">Zgłoszenia</a>
+                    <a href="new-ticket.html" class="nav-item">Nowe zgłoszenie</a>
+                    <a href="admin.html" class="nav-item">Panel Administracyjny</a>
+                    <a href="reports.html" class="nav-item active">Raporty</a>
+                </nav>
+            </aside>
+            
+            <main class="main-content">
+                <h1>Generator Raportów</h1>
+
+                <div class="report-controls">
+                    <div class="control-group">
+                        <label>Okres raportu</label>
+                        <select id="period-select" class="form-control" style="width: 200px;" onchange="updateDatesFromPeriod()">
+                            <option value="today">Dzisiaj</option>
+                            <option value="week">Ten Tydzień</option>
+                            <option value="month" selected>Ten Miesiąc</option>
+                            <option value="year">Ten Rok</option>
+                            <option value="custom">Niestandardowy</option>
+                        </select>
+                    </div>
+
+                    <div class="control-group">
+                        <label>Data od</label>
+                        <input type="date" id="date-start" class="form-control">
+                    </div>
+                    <div class="control-group">
+                        <label>Data do</label>
+                        <input type="date" id="date-end" class="form-control">
+                    </div>
+
+                    <div class="control-group">
+                        <label>Grupuj według</label>
+                        <select id="type-select" class="form-control" style="width: 200px;">
+                            <option value="specialist">Specjalista IT (Zamykający)</option>
+                            <option value="group">Grupa IT</option>
+                            <option value="category">Kategoria</option>
+                            <option value="user">Zgłaszający Użytkownik</option>
+                        </select>
+                    </div>
+
+                    <div class="control-group">
+                        <label>&nbsp;</label>
+                        <button class="btn-primary" onclick="generateReport()">Generuj Raport</button>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table class="ticket-table report-table">
+                        <thead>
+                            <tr>
+                                <th>Nazwa (Grupa/Osoba)</th>
+                                <th>Liczba zgłoszeń</th>
+                                <th>Śr. Czas Realizacji (godz.)</th>
+                                <th>Przeterminowane (SLA)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="report-tbody">
+                            <tr><td colspan="4" style="text-align:center; padding: 20px;">Wybierz parametry i kliknij Generuj.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        // Inicjalizacja
+        (async function() {
+            const resp = await fetch('/.auth/me');
+            const data = await resp.json();
+            const user = data.clientPrincipal;
+            if (!user || !user.userRoles.includes('sd')) {
+                window.location.href = 'index.html';
+                return;
+            }
+            document.getElementById('userName').textContent = user.userDetails;
+            updateDatesFromPeriod(); // Ustaw domyślne daty
+        })();
+
+        function updateDatesFromPeriod() {
+            const period = document.getElementById('period-select').value;
+            const startInput = document.getElementById('date-start');
+            const endInput = document.getElementById('date-end');
+            
+            if (period === 'custom') return; // Nie ruszamy dat
+
+            const now = new Date();
+            let start = new Date();
+            let end = new Date();
+
+            // Ustaw koniec dnia na dzisiaj 23:59:59
+            end.setHours(23, 59, 59, 999);
+
+            if (period === 'today') {
+                start.setHours(0, 0, 0, 0);
+            } else if (period === 'week') {
+                // Początek tygodnia (poniedziałek)
+                const day = now.getDay() || 7; // Niedziela to 0, zamieniamy na 7
+                if (day !== 1) start.setHours(-24 * (day - 1));
+                else start.setHours(0,0,0,0);
+            } else if (period === 'month') {
+                start.setDate(1);
+                start.setHours(0,0,0,0);
+            } else if (period === 'year') {
+                start.setMonth(0, 1);
+                start.setHours(0,0,0,0);
+            }
+
+            startInput.valueAsDate = start;
+            endInput.valueAsDate = end;
+        }
+
+        async function generateReport() {
+            const tbody = document.getElementById('report-tbody');
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Ładowanie danych...</td></tr>';
+
+            const payload = {
+                startDate: new Date(document.getElementById('date-start').value).toISOString(),
+                // End date: musimy wziąć koniec dnia wybranego przez użytkownika
+                endDate: new Date(document.getElementById('date-end').value + 'T23:59:59.999Z').toISOString(), 
+                reportType: document.getElementById('type-select').value
+            };
+
+            try {
+                const response = await fetch('/api/generateReport', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if(!response.ok) throw new Error("Błąd serwera");
+                const data = await response.json();
+
+                tbody.innerHTML = '';
+                if (data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Brak danych za wybrany okres.</td></tr>';
+                    return;
+                }
+
+                // Znajdź max dla paska
+                const maxCount = Math.max(...data.map(d => d.count));
+
+                data.forEach(row => {
+                    const tr = document.createElement('tr');
+                    
+                    // Pasek wizualny
+                    const widthPct = (row.count / maxCount) * 100;
+                    
+                    // Kolor SLA
+                    const slaClass = row.slaBreachPercent > 0 ? 'sla-bad' : 'sla-good';
+                    const slaText = row.slaBreachPercent > 0 
+                        ? `${row.slaBreachPercent}%` 
+                        : `0% (OK)`;
+
+                    tr.innerHTML = `
+                        <td><strong>${escapeHTML(row.name)}</strong></td>
+                        <td>
+                            <div class="bar-container"><div class="bar-fill" style="width: ${widthPct}%"></div></div>
+                            ${row.count}
+                        </td>
+                        <td>${row.avgTime} h</td>
+                        <td class="${slaClass}">${slaText}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+            } catch (error) {
+                console.error(error);
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color: red;">Wystąpił błąd podczas generowania raportu.</td></tr>';
+            }
+        }
+        
+        function escapeHTML(str) {
+            if (!str) return '---';
+            return str.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+    </script>
+</body>
+</html>
