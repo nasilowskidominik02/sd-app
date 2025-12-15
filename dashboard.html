@@ -140,7 +140,6 @@
         let refreshInterval;
         let cachedCategories = []; 
         
-        // Zmienne do obsługi powiadomień
         let notificationsInterval;
         let currentNotifications = [];
 
@@ -149,11 +148,8 @@
             return str.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
         }
 
-        // --- Logika Powiadomień
-        
         async function fetchNotifications() {
             try {
-                // Dodajemy timestamp do URL, aby oszukać cache przeglądarki
                 const timestamp = new Date().getTime();
                 const response = await fetch(`/api/getNotifications?t=${timestamp}`);
                 
@@ -172,7 +168,6 @@
             const badge = document.getElementById('notification-badge');
             const list = document.getElementById('notification-list');
             
-            // 1. Aktualizacja licznika
             if (currentNotifications.length > 0) {
                 badge.textContent = currentNotifications.length;
                 badge.classList.remove('hidden');
@@ -180,7 +175,6 @@
                 badge.classList.add('hidden');
             }
 
-            // 2. Aktualizacja listy
             list.innerHTML = '';
             if (currentNotifications.length === 0) {
                 list.innerHTML = '<div class="notification-empty">Brak nowych powiadomień</div>';
@@ -210,8 +204,6 @@
         }
 
        async function handleNotificationClick(notification) {
-            // 1. Oznacz jako przeczytane w bazie
-            // ZMIANA: Wysyłamy też partitionKey (category), który przyszedł z bazy
             try {
                 await fetch('/api/markNotificationRead', {
                     method: 'POST',
@@ -223,19 +215,14 @@
                 });
             } catch (e) { console.error(e); }
 
-            // 2. Ukryj dropdown
             document.getElementById('notification-dropdown').classList.remove('show');
-            
-            // 3. Odśwież listę powiadomień (usunie kliknięte)
             fetchNotifications();
 
-            // 4. Otwórz zgłoszenie
             if (notification.ticketId) {
                 openTicketModal(notification.ticketId);
             }
         }
 
-        // Zamknij dropdown gdy klikniemy poza nim
         window.onclick = function(event) {
             if (!event.target.closest('.notification-wrapper')) {
                 const dropdown = document.getElementById('notification-dropdown');
@@ -244,9 +231,6 @@
                 }
             }
         }
-
-        // --- Koniec Logiki Powiadomień ---
-
 
         async function fetchCategories() {
             try {
@@ -317,13 +301,18 @@
                     const statusClass = `status-${ticket.status.toLowerCase().replace(/\s/g, '-')}`;
                     const closedDate = isClosed && ticket.dates.closedAt ? new Date(ticket.dates.closedAt).toLocaleString('pl-PL') : '---';
 
+                    // NOWOŚĆ: Automatyczne łamanie maila przed @
+                    const personDisplay = ticket.assignedTo.person 
+                        ? escapeHTML(ticket.assignedTo.person).replace('@', '<br>@') 
+                        : '---';
+
                     row.innerHTML = `
                         <td>${escapeHTML(ticket.id)}</td>
                         <td><span class="status-badge ${statusClass}">${escapeHTML(ticket.status)}</span></td>
                         <td>${escapeHTML(ticket.title)}</td>
                         <td>${escapeHTML(ticket.reportingUser.name)}</td>
                         <td>${escapeHTML(ticket.category)}</td>
-                        <td>${escapeHTML(ticket.assignedTo.person || '---')}</td>
+                        <td>${personDisplay}</td>
                         <td>${escapeHTML(ticket.assignedTo.group)}</td>
                         <td>${new Date(ticket.dates.createdAt).toLocaleString('pl-PL')}</td>
                         <td>${new Date(ticket.dates.guaranteedResolutionAt).toLocaleString('pl-PL')}</td>
@@ -342,7 +331,6 @@
             modal.classList.remove('hidden');
             document.getElementById('modal-body').innerHTML = '<p class="loading-message">Ładowanie szczegółów...</p>';
             
-            // Zatrzymujemy auto-odświeżanie dashboardu, żeby modal nie zniknął
             clearInterval(refreshInterval); 
 
             try {
@@ -638,7 +626,6 @@
              clearInterval(refreshInterval);
              clearInterval(notificationsInterval);
              
-             // Odświeżanie zgłoszeń co minutę
              refreshInterval = setInterval(() => {
                 if (document.getElementById('ticket-modal').classList.contains('hidden') && 
                     document.getElementById('closing-modal').classList.contains('hidden')) {
@@ -646,7 +633,6 @@
                 }
             }, 60000);
 
-            // Odświeżanie powiadomień co minutę
             notificationsInterval = setInterval(fetchNotifications, 60000);
         }
 
@@ -676,7 +662,6 @@
                 await fetchCategories();
                 loadTickets();
                 
-                // Inicjalizacja powiadomień
                 fetchNotifications();
                 
                 startAutoRefresh();
