@@ -166,6 +166,34 @@ a:hover {
 .search-container {
     display: flex;
     gap: 8px;
+    align-items: center; /* Wyrównanie w pionie */
+}
+
+/* Styl dla nowego selecta */
+.search-select {
+    padding: 6px 10px;
+    border: 1px solid var(--gray-border);
+    border-radius: var(--border-radius);
+    background-color: var(--white);
+    font-size: 13px;
+    height: 32px; /* Żeby pasował wysokością do inputa */
+    cursor: pointer;
+}
+
+#search-input {
+    padding: 6px 10px;
+    border: 1px solid var(--gray-border);
+    border-radius: var(--border-radius);
+    min-width: 200px;
+    font-size: 13px;
+    height: 32px; /* Wymuszona wysokość */
+}
+
+#search-btn {
+    height: 32px;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
 }
 
 #search-input {

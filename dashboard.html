@@ -52,7 +52,17 @@
                 <div class="toolbar">
                     <h1 id="dashboard-title">Twoje ostatnie zgłoszenia</h1>
                     <div class="search-container">
-                        <input type="text" id="search-input" placeholder="Szukaj (ID, Tytuł, Osoba, Status...)">
+                        <select id="search-field" class="search-select">
+                            <option value="id">ID</option>
+                            <option value="title">Tytuł</option>
+                            <option value="user">Użytkownik</option>
+                            <option value="category">Kategoria</option>
+                            <option value="assigned">Odpowiedzialny</option>
+                            <option value="group">Grupa</option>
+                            <option value="created">Utworzono (RRRR-MM-DD)</option>
+                            <option value="closed">Zamknięto (RRRR-MM-DD)</option>
+                        </select>
+                        <input type="text" id="search-input" placeholder="Wpisz szukaną frazę...">
                         <button id="search-btn" class="btn-primary">Szukaj</button>
                     </div>
                 </div>
@@ -269,27 +279,40 @@
             }
         }
 
-        // --- ZMODYFIKOWANA FUNKCJA: loadTickets ---
-        async function loadTickets(searchTerm = '') {
+        // --- WKLEJ TO W MIEJSCE STAREJ FUNKCJI loadTickets ---
+        async function loadTickets() {
+            // 1. Pobieramy to, co użytkownik wybrał z listy i wpisał w pole
+            const searchInput = document.getElementById('search-input');
+            const fieldSelect = document.getElementById('search-field');
+            
+            // Zabezpieczenie: jeśli elementy nie istnieją (np. błąd HTML), używamy pustych wartości
+            const searchTerm = searchInput ? searchInput.value : '';
+            const searchField = fieldSelect ? fieldSelect.value : 'id';
+
             const tbody = document.getElementById('tickets-tbody');
             tbody.innerHTML = '<tr><td colspan="10">Ładowanie zgłoszeń...</td></tr>';
             
             try {
-                // ZMIANA: Parametr w URL to teraz 'search', a nie 'searchId'
+                // 2. Kodujemy parametry do URL (np. spacje na %20)
                 const encodedSearch = encodeURIComponent(searchTerm);
-                const response = await fetch(`/api/getTickets?page=${currentPage}&search=${encodedSearch}`);
+                const encodedField = encodeURIComponent(searchField);
+                
+                // 3. Wysyłamy zapytanie do API z dwoma parametrami: search i field
+                const response = await fetch(`/api/getTickets?page=${currentPage}&search=${encodedSearch}&field=${encodedField}`);
                 
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
+                
                 const { tickets, totalPages } = data;
 
                 tbody.innerHTML = '';
                 if (tickets.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="10">Brak zgłoszeń do wyświetlenia. ${searchTerm ? 'Spróbuj wyczyścić filtr.' : ''}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="10">Brak zgłoszeń spełniających kryteria.</td></tr>`;
                     renderPagination(0, 0);
                     return;
                 }
-
+                
+                // 4. Generowanie wierszy tabeli (to pozostaje bez zmian)
                 tickets.forEach(ticket => {
                     const row = tbody.insertRow();
                     row.className = 'ticket-row';
@@ -304,18 +327,13 @@
                         const diffMs = slaTime.getTime() - now.getTime();
                         const diffHours = diffMs / (1000 * 60 * 60); 
 
-                        if (diffMs < 0) {
-                            row.classList.add('sla-danger'); 
-                        } else if (diffHours <= 2) {
-                            row.classList.add('sla-warning'); 
-                        }
+                        if (diffMs < 0) { row.classList.add('sla-danger'); } 
+                        else if (diffHours <= 2) { row.classList.add('sla-warning'); }
                     }
 
                     const statusClass = `status-${ticket.status.toLowerCase().replace(/\s/g, '-')}`;
                     const reportingUserDisplay = escapeHTML(ticket.reportingUser.name).replace('@', '<br>@');
-                    const personDisplay = ticket.assignedTo.person 
-                        ? escapeHTML(ticket.assignedTo.person).replace('@', '<br>@') 
-                        : '---';
+                    const personDisplay = ticket.assignedTo.person ? escapeHTML(ticket.assignedTo.person).replace('@', '<br>@') : '---';
 
                     const createdDisplay = formatDateTwoLines(ticket.dates.createdAt);
                     const slaDisplay = formatDateTwoLines(ticket.dates.guaranteedResolutionAt);
@@ -686,16 +704,18 @@
                 
                 startAutoRefresh();
 
-                document.getElementById('search-btn').addEventListener('click', () => {
-                    currentPage = 1;
-                    loadTickets(document.getElementById('search-input').value);
-                });
-                document.getElementById('search-input').addEventListener('keyup', (e) => {
-                    if (e.key === 'Enter') {
-                        currentPage = 1;
-                        loadTickets(document.getElementById('search-input').value);
-                    }
-                });
+                    document.getElementById('search-btn').addEventListener('click', () => {
+                        currentPage = 1; // Resetujemy na pierwszą stronę wyników
+                        loadTickets();   // Wywołujemy bez parametrów!
+                    });
+
+                    // Obsługa wciśnięcia ENTER w polu tekstowym
+                    document.getElementById('search-input').addEventListener('keyup', (e) => {
+                        if (e.key === 'Enter') {
+                            currentPage = 1;
+                            loadTickets(); // Wywołujemy bez parametrów!
+                        }
+                    });
                 
                 document.getElementById('closing-modal-close-btn').addEventListener('click', closeClosingModal);
                 document.getElementById('closing-form').addEventListener('submit', handleClosingFormSubmit);

@@ -14,10 +14,12 @@ module.exports = async function (context, req) {
     const isServiceDesk = clientPrincipal.userRoles.includes('sd');
     const userEmail = clientPrincipal.userDetails;
     
-    // Pobieramy parametry
     const page = parseInt(req.query.page) || 1;
-    // 'search' to nasza nowa, uniwersalna fraza
-    const searchText = req.query.search ? req.query.search.toLowerCase() : ''; 
+    
+    // Pobieramy parametry wyszukiwania
+    const searchText = req.query.search ? req.query.search.toLowerCase().trim() : '';
+    const searchField = req.query.field || 'id'; // Domyślnie szukaj po ID
+    
     const pageSize = 10;
     const offset = (page - 1) * pageSize;
 
@@ -26,31 +28,59 @@ module.exports = async function (context, req) {
     let whereClauses = [];
     let parameters = [];
 
-    // --- FILTRACJA PODSTAWOWA ---
+    // --- FILTRY PODSTAWOWE ---
     whereClauses.push("c.id != 'global_settings'");
     whereClauses.push("(NOT IS_DEFINED(c.type) OR c.type != 'notification')");
 
-    // Jeśli to zwykły user, widzi tylko swoje
     if (!isServiceDesk) {
         whereClauses.push("c.reportingUser.email = @userEmail");
         parameters.push({ name: "@userEmail", value: userEmail });
     }
 
-    // --- WYSZUKIWANIE UNIWERSALNE ---
+    // --- LOGIKA WYSZUKIWANIA PO KONKRETNYM POLU ---
     if (searchText) {
-        // Sprawdzamy wiele pól naraz używając OR
-        // Używamy LOWER() aby ignorować wielkość liter (Case Insensitive)
-        whereClauses.push(`(
-            CONTAINS(LOWER(c.id), @search) OR
-            CONTAINS(LOWER(c.title), @search) OR
-            CONTAINS(LOWER(c.status), @search) OR
-            CONTAINS(LOWER(c.category), @search) OR
-            CONTAINS(LOWER(c.reportingUser.name), @search) OR
-            CONTAINS(LOWER(c.reportingUser.email), @search) OR
-            (IS_DEFINED(c.assignedTo.person) AND CONTAINS(LOWER(c.assignedTo.person), @search)) OR
-            CONTAINS(LOWER(c.assignedTo.group), @search)
-        )`);
+        let condition = "";
+        
+        switch (searchField) {
+            case 'id':
+                // ID często wpisujemy fragmentami, np. "2025"
+                condition = "CONTAINS(LOWER(c.id), @search)";
+                break;
+            case 'title':
+                condition = "CONTAINS(LOWER(c.title), @search)";
+                break;
+            case 'user':
+                // Szukamy w nazwie LUB w emailu zgłaszającego
+                condition = "(CONTAINS(LOWER(c.reportingUser.name), @search) OR CONTAINS(LOWER(c.reportingUser.email), @search))";
+                break;
+            case 'category':
+                condition = "CONTAINS(LOWER(c.category), @search)";
+                break;
+            case 'assigned':
+                // Sprawdzamy czy pole istnieje, a potem szukamy
+                condition = "(IS_DEFINED(c.assignedTo.person) AND CONTAINS(LOWER(c.assignedTo.person), @search))";
+                break;
+            case 'group':
+                condition = "CONTAINS(LOWER(c.assignedTo.group), @search)";
+                break;
+            case 'created':
+                // Data utworzenia (np. wpisanie "2025-12-12" znajdzie wszystkie z tego dnia)
+                // Używamy STARTSWITH na stringu daty ISO (np. 2025-12-12T15:00...)
+                condition = "STARTSWITH(c.dates.createdAt, @searchRaw)";
+                break;
+            case 'closed':
+                // Data zamknięcia
+                condition = "(IS_DEFINED(c.dates.closedAt) AND STARTSWITH(c.dates.closedAt, @searchRaw))";
+                break;
+            default:
+                // Domyślnie po ID
+                condition = "CONTAINS(LOWER(c.id), @search)";
+        }
+
+        whereClauses.push(condition);
         parameters.push({ name: "@search", value: searchText });
+        // Dla dat używamy oryginalnej wielkości liter (choć cyfry to bez znaczenia, to dobra praktyka)
+        parameters.push({ name: "@searchRaw", value: req.query.search.trim() });
     }
 
     if (whereClauses.length > 0) {
@@ -64,7 +94,6 @@ module.exports = async function (context, req) {
     parameters.push({ name: "@limit", value: pageSize });
 
     const querySpec = { query, parameters };
-    // Do countQuery bierzemy parametry bez offset/limit
     const countParams = parameters.filter(p => p.name !== '@offset' && p.name !== '@limit');
     const countQuerySpec = { query: countQuery, parameters: countParams }; 
     
