@@ -68,7 +68,7 @@ module.exports = async function (context, req) {
         const reportingUserEmail = ticket.reportingUser.email;
         const isSelfUpdate = reportingUserEmail.toLowerCase() === clientPrincipal.userDetails.toLowerCase();
 
-        // 1. Logika ZAMKNIĘCIA
+        // 1. Logika ZAMKNIĘCIA (Ticket był już zamknięty i ktoś próbuje go edytować)
         if (ticket.status === 'Zamknięte') {
             const isReopening = changes.status && changes.status === 'Otwarte';
             if (isReopening) {
@@ -81,25 +81,55 @@ module.exports = async function (context, req) {
                 return { status: 403, body: { message: "Error: Ticket is closed." } };
             }
         } else {
-            // 2. ZMIANA STATUSU
+            // 2. ZMIANA STATUSU (Ticket jest otwarty)
             if (changes.status && ticket.status !== changes.status) {
+                
+                // --- SCENARIUSZ: ZAMYKANIE ZGŁOSZENIA ---
                 if (['Rozwiązane', 'Odrzucone'].includes(changes.status)) {
                     addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "Zamknięte".`, clientPrincipal);
                     ticket.status = 'Zamknięte'; 
                     ticket.dates.closedAt = new Date().toISOString();
                     
+                    // Przypisz osobę zamykającą, jeśli nikt nie był przypisany
                     if (!ticket.assignedTo.person) {
                         ticket.assignedTo.person = clientPrincipal.userDetails;
                     }
 
+                    // --- NOWOŚĆ: Automatyczna zmiana Grupy na grupę osoby zamykającej ---
+                    try {
+                        // Pobieramy ustawienia globalne, żeby sprawdzić członków grup
+                        const settingsQuery = { query: "SELECT * FROM c WHERE c.id = 'global_settings'" };
+                        const { resources: settingsItems } = await ticketsContainer.items.query(settingsQuery).fetchAll();
+                        const globalSettings = settingsItems.length > 0 ? settingsItems[0] : null;
+
+                        if (globalSettings && globalSettings.groups) {
+                            const closingUserEmail = clientPrincipal.userDetails.toLowerCase();
+                            
+                            // Szukamy grupy, która zawiera maila osoby zamykającej
+                            const userGroup = globalSettings.groups.find(g => 
+                                g.members && g.members.includes(closingUserEmail)
+                            );
+
+                            // Jeśli znaleziono grupę i jest inna niż obecna -> podmieniamy
+                            if (userGroup && ticket.assignedTo.group !== userGroup.name) {
+                                addSystemComment(ticket, `Automatycznie zmieniono grupę na "${userGroup.name}" (zgodnie z zespołem osoby zamykającej).`, clientPrincipal);
+                                ticket.assignedTo.group = userGroup.name;
+                            }
+                        }
+                    } catch (grpErr) {
+                        context.log.error("Błąd przy automatycznej zmianie grupy:", grpErr);
+                        // Nie przerywamy działania, to tylko funkcja pomocnicza
+                    }
+                    // -------------------------------------------------------------------
+
                     if (changes.closingComment) {
-                         // Tutaj też dodajemy prefiks dla komentarza zamykającego
                          addSystemComment(ticket, `Dodano komentarz zamknięcia: ${changes.closingComment}`, clientPrincipal);
                     }
                     
                     if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Zgłoszenie #${ticketId} zostało zamknięte (${changes.status}).`, ticketId);
 
                 } else { 
+                    // --- SCENARIUSZ: INNA ZMIANA STATUSU (np. W toku) ---
                     addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "${changes.status}".`, clientPrincipal);
                     ticket.status = changes.status;
                     
@@ -122,6 +152,7 @@ module.exports = async function (context, req) {
 
             // 4. ZMIANA KATEGORII
             if (changes.category && ticket.category !== changes.category) {
+                // Pobieramy ustawienia, żeby znaleźć domyślną grupę dla nowej kategorii
                 const settingsQuery = { query: "SELECT * FROM c WHERE c.id = 'global_settings'" };
                 const { resources: settingsItems } = await ticketsContainer.items.query(settingsQuery).fetchAll();
                 const globalSettings = settingsItems.length > 0 ? settingsItems[0] : null;
@@ -135,9 +166,11 @@ module.exports = async function (context, req) {
                 addSystemComment(ticket, `Zmieniono kategorię z "${ticket.category}" na "${changes.category}".`, clientPrincipal);
                 ticket.category = changes.category;
                 
+                // Jeśli zmiana kategorii wymusza zmianę grupy
                 if (newGroup !== ticket.assignedTo.group) {
                     addSystemComment(ticket, `Zmieniono grupę odpowiedzialną na: ${newGroup}.`, clientPrincipal);
                     ticket.assignedTo.group = newGroup;
+                    // Resetujemy osobę przypisaną, bo trafiło do nowej grupy
                     if(ticket.assignedTo.person) ticket.assignedTo.person = null;
                 }
 
@@ -149,12 +182,10 @@ module.exports = async function (context, req) {
                 }
             }
 
-            // 5. KOMENTARZ (TUTAJ ZMIANA)
+            // 5. KOMENTARZ
             if (changes.newComment) {
                  if (!ticket.comments) ticket.comments = [];
                  
-                 // FORMATOWANIE: Dodajemy prefiks "Dodano komentarz: " do treści
-                 // Data jest zapisywana w polu timestamp i wyświetlana w nagłówku komentarza w frontendzie
                  ticket.comments.push({
                     author: clientPrincipal.userDetails,
                     text: `Dodano komentarz: ${changes.newComment.text}`, 
@@ -166,7 +197,7 @@ module.exports = async function (context, req) {
             }
         }
         
-        // Zapis
+        // Zapis do bazy (upsert lub delete+create przy zmianie partycji)
         if (ticket.category !== originalCategory) {
             const { resource: createdItem } = await ticketsContainer.items.create(ticket);
             await ticketsContainer.item(ticketId, originalCategory).delete();
