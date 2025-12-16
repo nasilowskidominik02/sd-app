@@ -18,12 +18,12 @@
         }
         .admin-section h2 { margin-top: 0; margin-bottom: 20px; border-bottom: 1px solid var(--gray-border); padding-bottom: 10px; }
         
-        /* Style dla tabeli kategorii (istniejące) */
+        /* Style dla tabeli kategorii */
         .settings-table { width: 100%; border-collapse: collapse; }
         .settings-table th, .settings-table td { padding: 12px; border-bottom: 1px solid var(--gray-border); text-align: left; }
         .settings-table th { background-color: var(--light-gray-bg); font-weight: 600; }
         
-        /* Style dla sekcji Grup (NOWE) */
+        /* Style dla sekcji Grup */
         .groups-layout { display: flex; gap: 24px; flex-wrap: wrap; }
         .groups-list-panel { flex: 1; min-width: 300px; border-right: 1px solid var(--gray-border); padding-right: 24px; }
         .group-members-panel { flex: 2; min-width: 300px; }
@@ -75,7 +75,7 @@
 
                 <div class="admin-section">
                     <h2>Kategorie i SLA</h2>
-                    <p style="margin-bottom: 16px; color: var(--text-light);">Tutaj zdefiniuj kategorie zgłoszeń, czas na rozwiązanie (SLA w godzinach) oraz domyślną grupę przypisaną.</p>
+                    <p style="margin-bottom: 16px; color: var(--text-light);">Tutaj zdefiniuj kategorie zgłoszeń, czas na rozwiązanie (SLA w godzinach) oraz wybierz grupę odpowiedzialną.</p>
                     
                     <table class="settings-table">
                         <thead>
@@ -89,17 +89,21 @@
                         <tbody id="categories-tbody"></tbody>
                     </table>
                     
-                    <div style="margin-top: 16px; display: flex; gap: 8px;">
+                    <div style="margin-top: 16px; display: flex; gap: 8px; align-items: center;">
                         <input type="text" id="new-cat-name" placeholder="Nowa kategoria..." class="form-control" style="width: auto;">
                         <input type="number" id="new-cat-sla" placeholder="SLA (h)" class="form-control" style="width: 100px;">
-                        <input type="text" id="new-cat-group" placeholder="Grupa (np. HelpDesk)" class="form-control" style="width: auto;">
+                        
+                        <select id="new-cat-group" class="form-control" style="width: auto; min-width: 200px;">
+                            <option value="">-- Wybierz grupę --</option>
+                        </select>
+                        
                         <button class="btn-primary" onclick="addCategory()">Dodaj</button>
                     </div>
                 </div>
 
                 <div class="admin-section">
                     <h2>Zarządzanie Zespołami IT (Grupy)</h2>
-                    <p style="margin-bottom: 16px; color: var(--text-light);">Zdefiniuj, jacy użytkownicy (adresy e-mail) należą do poszczególnych grup.</p>
+                    <p style="margin-bottom: 16px; color: var(--text-light);">Zdefiniuj grupy i przypisz do nich użytkowników (adresy e-mail).</p>
                     
                     <div class="groups-layout">
                         <div class="groups-list-panel">
@@ -156,13 +160,33 @@
                 if (res.ok) {
                     const data = await res.json();
                     currentSettings = data;
-                    // Inicjalizacja tablicy grup, jeśli nie istnieje (dla kompatybilności wstecznej)
                     if (!currentSettings.groups) currentSettings.groups = [];
                     
-                    renderCategories();
+                    // Kolejność ważna: najpierw grupy, potem odświeżamy selecty, potem kategorie
                     renderGroupsList();
+                    refreshNewCategoryGroupSelect();
+                    renderCategories();
                 }
             } catch (e) { console.error(e); }
+        }
+
+        // --- POMOCNICZE DO SELECTA ---
+        function generateGroupOptions(selectedGroup) {
+            let html = `<option value="">-- Brak / Wybierz --</option>`;
+            if (currentSettings.groups && currentSettings.groups.length > 0) {
+                currentSettings.groups.forEach(g => {
+                    const isSelected = g.name === selectedGroup ? 'selected' : '';
+                    html += `<option value="${escapeHTML(g.name)}" ${isSelected}>${escapeHTML(g.name)}</option>`;
+                });
+            }
+            return html;
+        }
+
+        function refreshNewCategoryGroupSelect() {
+            const select = document.getElementById('new-cat-group');
+            if(select) {
+                select.innerHTML = generateGroupOptions('');
+            }
         }
 
         // --- OBSŁUGA KATEGORII ---
@@ -172,10 +196,18 @@
             
             currentSettings.categories.forEach((cat, index) => {
                 const tr = document.createElement('tr');
+                
+                // Generujemy dropdown dla wiersza tabeli
+                const groupSelectHTML = `
+                    <select class="form-control" onchange="updateCategory(${index}, 'assignedGroup', this.value)">
+                        ${generateGroupOptions(cat.assignedGroup)}
+                    </select>
+                `;
+
                 tr.innerHTML = `
                     <td>${escapeHTML(cat.name)}</td>
                     <td><input type="number" class="form-control" value="${cat.sla}" onchange="updateCategory(${index}, 'sla', this.value)" style="width: 80px;"></td>
-                    <td><input type="text" class="form-control" value="${cat.assignedGroup}" onchange="updateCategory(${index}, 'assignedGroup', this.value)"></td>
+                    <td>${groupSelectHTML}</td>
                     <td><button class="btn-danger btn-sm" onclick="removeCategory(${index})">Usuń</button></td>
                 `;
                 tbody.appendChild(tr);
@@ -185,22 +217,20 @@
         function addCategory() {
             const name = document.getElementById('new-cat-name').value.trim();
             const sla = parseInt(document.getElementById('new-cat-sla').value);
-            const group = document.getElementById('new-cat-group').value.trim();
+            const groupSelect = document.getElementById('new-cat-group');
+            const group = groupSelect.value; // Wartość z listy
 
             if (name && sla && group) {
                 currentSettings.categories.push({ name, sla, assignedGroup: group });
-                
-                // Automatycznie dodaj grupę do listy grup, jeśli jej nie ma
-                if (!currentSettings.groups.find(g => g.name.toLowerCase() === group.toLowerCase())) {
-                    currentSettings.groups.push({ name: group, members: [] });
-                    renderGroupsList();
-                }
 
                 document.getElementById('new-cat-name').value = '';
                 document.getElementById('new-cat-sla').value = '';
-                document.getElementById('new-cat-group').value = '';
+                groupSelect.value = ''; // Reset selecta
+                
                 renderCategories();
                 markChanges();
+            } else {
+                alert("Proszę wypełnić nazwę, SLA i wybrać grupę z listy!");
             }
         }
 
@@ -250,29 +280,41 @@
                 }
                 currentSettings.groups.push({ name: name, members: [] });
                 document.getElementById('new-group-name').value = '';
+                
                 renderGroupsList();
+                
+                // Odświeżamy dropdowny w kategoriach, bo doszła nowa grupa
+                refreshNewCategoryGroupSelect();
+                renderCategories();
+                
                 markChanges();
             }
         }
 
         function removeGroup(event, index) {
-            event.stopPropagation(); // Żeby nie klikało się selectGroup
+            event.stopPropagation();
             if (confirm(`Usunąć grupę "${currentSettings.groups[index].name}" i jej członków?`)) {
                 currentSettings.groups.splice(index, 1);
                 if (selectedGroupIndex === index) {
                     selectedGroupIndex = -1;
                     renderMembers();
                 } else if (selectedGroupIndex > index) {
-                    selectedGroupIndex--; // Przesuwamy indeks jeśli usunęliśmy coś wyżej
+                    selectedGroupIndex--;
                 }
+                
                 renderGroupsList();
+                
+                // Odświeżamy dropdowny w kategoriach, bo usunęliśmy grupę
+                refreshNewCategoryGroupSelect();
+                renderCategories();
+                
                 markChanges();
             }
         }
 
         function selectGroup(index) {
             selectedGroupIndex = index;
-            renderGroupsList(); // Odśwież, żeby zaznaczyć aktywny element
+            renderGroupsList(); 
             renderMembers();
         }
 
@@ -314,7 +356,6 @@
                     currentSettings.groups[selectedGroupIndex].members = [];
                 }
                 
-                // Sprawdź duplikaty
                 if (currentSettings.groups[selectedGroupIndex].members.includes(email)) {
                     alert('Ten użytkownik jest już w tej grupie.');
                     return;
@@ -323,7 +364,7 @@
                 currentSettings.groups[selectedGroupIndex].members.push(email);
                 emailInput.value = '';
                 renderMembers();
-                renderGroupsList(); // Żeby zaktualizować licznik osób
+                renderGroupsList(); 
                 markChanges();
             }
         }
