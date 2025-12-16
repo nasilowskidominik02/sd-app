@@ -44,14 +44,15 @@
                     <a href="dashboard.html" class="nav-item active">Zgłoszenia</a>
                     <a href="new-ticket.html" class="nav-item">Nowe zgłoszenie</a>
                     <a href="admin.html" id="admin-link" class="nav-item hidden">Panel Administracyjny</a> 
-                    <a href="reports.html" id="reports-link" class="nav-item hidden">Raporty</a> </nav>
+                    <a href="reports.html" id="reports-link" class="nav-item hidden">Raporty</a>
+                </nav>
             </aside>
             
             <main class="main-content">
                 <div class="toolbar">
                     <h1 id="dashboard-title">Twoje ostatnie zgłoszenia</h1>
                     <div class="search-container">
-                        <input type="text" id="search-input" placeholder="Wyszukaj po ID...">
+                        <input type="text" id="search-input" placeholder="Szukaj (ID, Tytuł, Osoba, Status...)">
                         <button id="search-btn" class="btn-primary">Szukaj</button>
                     </div>
                 </div>
@@ -148,13 +149,11 @@
             return str.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
         }
 
-        // Pomocnicza funkcja do formatowania daty w dwóch liniach
         function formatDateTwoLines(dateStr) {
             if (!dateStr) return '---';
             const dateObj = new Date(dateStr);
             const datePart = dateObj.toLocaleDateString('pl-PL');
             const timePart = dateObj.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
-            // Zwracamy HTML: Data <br> Godzina (na szaro i trochę mniejsza)
             return `${datePart}<br><span style="color:var(--text-light); font-size: 0.9em">${timePart}</span>`;
         }
 
@@ -270,19 +269,23 @@
             }
         }
 
-        async function loadTickets(searchId = '') {
+        // --- ZMODYFIKOWANA FUNKCJA: loadTickets ---
+        async function loadTickets(searchTerm = '') {
             const tbody = document.getElementById('tickets-tbody');
             tbody.innerHTML = '<tr><td colspan="10">Ładowanie zgłoszeń...</td></tr>';
             
             try {
-                const response = await fetch(`/api/getTickets?page=${currentPage}&searchId=${searchId}`);
+                // ZMIANA: Parametr w URL to teraz 'search', a nie 'searchId'
+                const encodedSearch = encodeURIComponent(searchTerm);
+                const response = await fetch(`/api/getTickets?page=${currentPage}&search=${encodedSearch}`);
+                
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
                 const { tickets, totalPages } = data;
 
                 tbody.innerHTML = '';
                 if (tickets.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="10">Brak zgłoszeń do wyświetlenia. ${searchId ? 'Spróbuj wyczyścić filtr.' : ''}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="10">Brak zgłoszeń do wyświetlenia. ${searchTerm ? 'Spróbuj wyczyścić filtr.' : ''}</td></tr>`;
                     renderPagination(0, 0);
                     return;
                 }
@@ -309,16 +312,11 @@
                     }
 
                     const statusClass = `status-${ticket.status.toLowerCase().replace(/\s/g, '-')}`;
-                    
-                    // Łamanie maila użytkownika (zgłaszającego)
                     const reportingUserDisplay = escapeHTML(ticket.reportingUser.name).replace('@', '<br>@');
-                    
-                    // Łamanie maila osoby odpowiedzialnej
                     const personDisplay = ticket.assignedTo.person 
                         ? escapeHTML(ticket.assignedTo.person).replace('@', '<br>@') 
                         : '---';
 
-                    // Formatowanie dat w dwóch liniach
                     const createdDisplay = formatDateTwoLines(ticket.dates.createdAt);
                     const slaDisplay = formatDateTwoLines(ticket.dates.guaranteedResolutionAt);
                     const closedDisplay = formatDateTwoLines(ticket.dates.closedAt);
@@ -643,7 +641,6 @@
              clearInterval(refreshInterval);
              clearInterval(notificationsInterval);
              
-             // Odświeżanie zgłoszeń co minutę
              refreshInterval = setInterval(() => {
                 if (document.getElementById('ticket-modal').classList.contains('hidden') && 
                     document.getElementById('closing-modal').classList.contains('hidden')) {
@@ -651,7 +648,6 @@
                 }
             }, 60000);
 
-            // Odświeżanie powiadomień co minutę
             notificationsInterval = setInterval(fetchNotifications, 60000);
         }
 
@@ -672,21 +668,20 @@
                 document.getElementById('userName').textContent = currentUserDetails.userDetails;
                 
                 const isServiceDesk = currentUserDetails.userRoles.includes('sd');
+                
+                if (isServiceDesk) {
+                    document.getElementById('dashboard-title').textContent = "Wszystkie ostatnie zgłoszenia";
+                    
+                    const adminLink = document.getElementById('admin-link');
+                    if(adminLink) adminLink.classList.remove('hidden');
 
-                    if (isServiceDesk) {
-                        document.getElementById('dashboard-title').textContent = "Wszystkie ostatnie zgłoszenia";
-                        
-                        const adminLink = document.getElementById('admin-link');
-                        if (adminLink) adminLink.classList.remove('hidden');
-
-                        const reportsLink = document.getElementById('reports-link');
-                        if (reportsLink) reportsLink.classList.remove('hidden');
-                    }
+                    const reportsLink = document.getElementById('reports-link');
+                    if(reportsLink) reportsLink.classList.remove('hidden');
+                }
 
                 await fetchCategories();
                 loadTickets();
                 
-                // Inicjalizacja powiadomień
                 fetchNotifications();
                 
                 startAutoRefresh();

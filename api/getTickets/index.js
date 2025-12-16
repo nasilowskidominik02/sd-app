@@ -13,8 +13,11 @@ module.exports = async function (context, req) {
 
     const isServiceDesk = clientPrincipal.userRoles.includes('sd');
     const userEmail = clientPrincipal.userDetails;
+    
+    // Pobieramy parametry
     const page = parseInt(req.query.page) || 1;
-    const searchId = req.query.searchId || '';
+    // 'search' to nasza nowa, uniwersalna fraza
+    const searchText = req.query.search ? req.query.search.toLowerCase() : ''; 
     const pageSize = 10;
     const offset = (page - 1) * pageSize;
 
@@ -23,24 +26,37 @@ module.exports = async function (context, req) {
     let whereClauses = [];
     let parameters = [];
 
-    // --- FILTRACJA: Wykluczamy ustawienia ORAZ powiadomienia ---
-    // Sprawdzamy: ID różne od settings ORAZ (typ nie istnieje LUB typ to nie powiadomienie)
+    // --- FILTRACJA PODSTAWOWA ---
     whereClauses.push("c.id != 'global_settings'");
     whereClauses.push("(NOT IS_DEFINED(c.type) OR c.type != 'notification')");
 
+    // Jeśli to zwykły user, widzi tylko swoje
     if (!isServiceDesk) {
         whereClauses.push("c.reportingUser.email = @userEmail");
         parameters.push({ name: "@userEmail", value: userEmail });
     }
 
-    if (searchId) {
-        whereClauses.push("STARTSWITH(c.id, @searchId)");
-        parameters.push({ name: "@searchId", value: searchId });
+    // --- WYSZUKIWANIE UNIWERSALNE ---
+    if (searchText) {
+        // Sprawdzamy wiele pól naraz używając OR
+        // Używamy LOWER() aby ignorować wielkość liter (Case Insensitive)
+        whereClauses.push(`(
+            CONTAINS(LOWER(c.id), @search) OR
+            CONTAINS(LOWER(c.title), @search) OR
+            CONTAINS(LOWER(c.status), @search) OR
+            CONTAINS(LOWER(c.category), @search) OR
+            CONTAINS(LOWER(c.reportingUser.name), @search) OR
+            CONTAINS(LOWER(c.reportingUser.email), @search) OR
+            (IS_DEFINED(c.assignedTo.person) AND CONTAINS(LOWER(c.assignedTo.person), @search)) OR
+            CONTAINS(LOWER(c.assignedTo.group), @search)
+        )`);
+        parameters.push({ name: "@search", value: searchText });
     }
 
     if (whereClauses.length > 0) {
-        query += " WHERE " + whereClauses.join(" AND ");
-        countQuery += " WHERE " + whereClauses.join(" AND ");
+        const whereString = " WHERE " + whereClauses.join(" AND ");
+        query += whereString;
+        countQuery += whereString;
     }
     
     query += " ORDER BY c.dates.createdAt DESC OFFSET @offset LIMIT @limit";
@@ -48,6 +64,7 @@ module.exports = async function (context, req) {
     parameters.push({ name: "@limit", value: pageSize });
 
     const querySpec = { query, parameters };
+    // Do countQuery bierzemy parametry bez offset/limit
     const countParams = parameters.filter(p => p.name !== '@offset' && p.name !== '@limit');
     const countQuerySpec = { query: countQuery, parameters: countParams }; 
     
