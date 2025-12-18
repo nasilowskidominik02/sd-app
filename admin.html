@@ -18,7 +18,6 @@
         }
         .admin-section h2 { margin-top: 0; margin-bottom: 20px; border-bottom: 1px solid var(--gray-border); padding-bottom: 10px; }
         
-        /* Style dla tabeli kategorii */
         .settings-table { width: 100%; border-collapse: collapse; }
         .settings-table th, .settings-table td { padding: 12px; border-bottom: 1px solid var(--gray-border); text-align: left; }
         .settings-table th { background-color: var(--light-gray-bg); font-weight: 600; }
@@ -36,17 +35,22 @@
         .group-item:hover { background-color: var(--light-gray-bg); }
         .group-item.active { background-color: #eff6ff; border-color: var(--primary-blue); }
         
-        .member-tag {
+        .member-tag, .holiday-tag {
             display: inline-flex; align-items: center; background-color: var(--light-gray-bg);
             padding: 6px 12px; border-radius: 20px; margin: 4px; font-size: 14px; border: 1px solid var(--gray-border);
         }
-        .member-tag button {
+        .member-tag button, .holiday-tag button {
             background: none; border: none; color: var(--danger-red); font-weight: bold; margin-left: 8px; cursor: pointer; font-size: 16px;
         }
         .empty-state { color: var(--text-light); font-style: italic; padding: 20px; text-align: center; }
 
         .btn-sm { padding: 4px 8px; font-size: 12px; margin-left: 8px; }
         .btn-danger { background-color: var(--danger-red); color: white; border: none; border-radius: 4px; cursor: pointer; }
+
+        /* Style dla Kalendarza */
+        .calendar-settings { display: flex; gap: 32px; flex-wrap: wrap; }
+        .work-hours-panel { flex: 1; min-width: 250px; }
+        .holidays-panel { flex: 1; min-width: 250px; }
     </style>
 </head>
 <body>
@@ -102,6 +106,38 @@
                 </div>
 
                 <div class="admin-section">
+                    <h2>Kalendarz Pracy i Święta</h2>
+                    <p style="margin-bottom: 16px; color: var(--text-light);">Zdefiniuj godziny pracy serwisu oraz dni wolne. System SLA uwzględni te ustawienia (pominie weekendy, noce i święta).</p>
+                    
+                    <div class="calendar-settings">
+                        <div class="work-hours-panel">
+                            <h3>Godziny Pracy (Pn-Pt)</h3>
+                            <div class="form-group">
+                                <label>Godzina rozpoczęcia:</label>
+                                <input type="number" id="work-start-hour" class="form-control" min="0" max="23" style="width: 80px; display: inline-block;">
+                                <span>: 00</span>
+                            </div>
+                            <div class="form-group">
+                                <label>Godzina zakończenia:</label>
+                                <input type="number" id="work-end-hour" class="form-control" min="0" max="23" style="width: 80px; display: inline-block;">
+                                <span>: 00</span>
+                            </div>
+                            <small>SLA będzie liczone tylko w tym przedziale czasowym.</small>
+                        </div>
+
+                        <div class="holidays-panel">
+                            <h3>Dni wolne od pracy (Święta)</h3>
+                            <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                                <input type="date" id="new-holiday-date" class="form-control">
+                                <button class="btn-primary" onclick="addHoliday()">Dodaj dzień wolny</button>
+                            </div>
+                            <div id="holidays-list" style="max-height: 200px; overflow-y: auto;">
+                                </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="admin-section">
                     <h2>Zarządzanie Zespołami IT (Grupy)</h2>
                     <p style="margin-bottom: 16px; color: var(--text-light);">Zdefiniuj grupy i przypisz do nich użytkowników (adresy e-mail).</p>
                     
@@ -139,7 +175,7 @@
     </div>
 
     <script>
-        let currentSettings = { categories: [], groups: [] };
+        let currentSettings = { categories: [], groups: [], workConfig: { startHour: 8, endHour: 16, holidays: [] } };
         let selectedGroupIndex = -1;
         let hasChanges = false;
 
@@ -160,12 +196,18 @@
                 if (res.ok) {
                     const data = await res.json();
                     currentSettings = data;
-                    if (!currentSettings.groups) currentSettings.groups = [];
                     
-                    // Kolejność ważna: najpierw grupy, potem odświeżamy selecty, potem kategorie
+                    // Inicjalizacja domyślnych wartości jeśli brak
+                    if (!currentSettings.groups) currentSettings.groups = [];
+                    if (!currentSettings.workConfig) {
+                        currentSettings.workConfig = { startHour: 8, endHour: 16, holidays: [] };
+                    }
+                    if (!currentSettings.workConfig.holidays) currentSettings.workConfig.holidays = [];
+
                     renderGroupsList();
                     refreshNewCategoryGroupSelect();
                     renderCategories();
+                    renderWorkConfig(); // Nowa funkcja
                 }
             } catch (e) { console.error(e); }
         }
@@ -188,6 +230,67 @@
                 select.innerHTML = generateGroupOptions('');
             }
         }
+
+        // --- OBSŁUGA KALENDARZA (NOWE) ---
+        function renderWorkConfig() {
+            document.getElementById('work-start-hour').value = currentSettings.workConfig.startHour;
+            document.getElementById('work-end-hour').value = currentSettings.workConfig.endHour;
+            
+            // Listenery do godzin
+            document.getElementById('work-start-hour').onchange = (e) => {
+                currentSettings.workConfig.startHour = parseInt(e.target.value);
+                markChanges();
+            };
+            document.getElementById('work-end-hour').onchange = (e) => {
+                currentSettings.workConfig.endHour = parseInt(e.target.value);
+                markChanges();
+            };
+
+            renderHolidaysList();
+        }
+
+        function renderHolidaysList() {
+            const container = document.getElementById('holidays-list');
+            container.innerHTML = '';
+            
+            // Sortujemy daty
+            const sortedHolidays = [...currentSettings.workConfig.holidays].sort();
+
+            if (sortedHolidays.length === 0) {
+                container.innerHTML = '<div class="empty-state">Brak zdefiniowanych dni wolnych.</div>';
+                return;
+            }
+
+            sortedHolidays.forEach((dateStr, index) => {
+                const div = document.createElement('div');
+                div.className = 'holiday-tag';
+                div.innerHTML = `${dateStr} <button onclick="removeHoliday('${dateStr}')">&times;</button>`;
+                container.appendChild(div);
+            });
+        }
+
+        function addHoliday() {
+            const dateInput = document.getElementById('new-holiday-date');
+            const dateVal = dateInput.value;
+
+            if (dateVal) {
+                if (!currentSettings.workConfig.holidays.includes(dateVal)) {
+                    currentSettings.workConfig.holidays.push(dateVal);
+                    renderHolidaysList();
+                    markChanges();
+                    dateInput.value = '';
+                } else {
+                    alert('Ta data jest już na liście.');
+                }
+            }
+        }
+
+        function removeHoliday(dateStr) {
+            currentSettings.workConfig.holidays = currentSettings.workConfig.holidays.filter(h => h !== dateStr);
+            renderHolidaysList();
+            markChanges();
+        }
+
 
         // --- OBSŁUGA KATEGORII ---
         function renderCategories() {
@@ -218,14 +321,14 @@
             const name = document.getElementById('new-cat-name').value.trim();
             const sla = parseInt(document.getElementById('new-cat-sla').value);
             const groupSelect = document.getElementById('new-cat-group');
-            const group = groupSelect.value; // Wartość z listy
+            const group = groupSelect.value; 
 
             if (name && sla && group) {
                 currentSettings.categories.push({ name, sla, assignedGroup: group });
 
                 document.getElementById('new-cat-name').value = '';
                 document.getElementById('new-cat-sla').value = '';
-                groupSelect.value = ''; // Reset selecta
+                groupSelect.value = ''; 
                 
                 renderCategories();
                 markChanges();
@@ -282,11 +385,8 @@
                 document.getElementById('new-group-name').value = '';
                 
                 renderGroupsList();
-                
-                // Odświeżamy dropdowny w kategoriach, bo doszła nowa grupa
                 refreshNewCategoryGroupSelect();
                 renderCategories();
-                
                 markChanges();
             }
         }
@@ -303,11 +403,8 @@
                 }
                 
                 renderGroupsList();
-                
-                // Odświeżamy dropdowny w kategoriach, bo usunęliśmy grupę
                 refreshNewCategoryGroupSelect();
                 renderCategories();
-                
                 markChanges();
             }
         }

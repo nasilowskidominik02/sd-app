@@ -1,6 +1,5 @@
 const { CosmosClient } = require("@azure/cosmos");
 
-// Inicjalizacja połączeń
 const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
 const database = client.database("ServiceDeskDB");
 const countersContainer = database.container("Counters");
@@ -13,44 +12,74 @@ function padNumber(num, size) {
 }
 
 /**
- * Funkcja obliczająca SLA na podstawie godzin roboczych
+ * ZAAWANSOWANE OBLICZANIE SLA (WORK CALENDAR)
+ * * @param {Date} startDate - Data utworzenia zgłoszenia
+ * @param {number} hoursToAdd - Czas SLA w godzinach
+ * @param {Object} workConfig - Konfiguracja { startHour, endHour, holidays: [] }
  */
-function calculateSLA(startDate, hoursToAdd) {
-    let minutesToAdd = (hoursToAdd || 8) * 60;
-    let currentDate = new Date(startDate);
+function calculateAdvancedSLA(startDate, hoursToAdd, workConfig) {
+    // Domyślne wartości, jeśli brak konfiguracji
+    const startHour = workConfig?.startHour || 8;
+    const endHour = workConfig?.endHour || 16;
+    const holidays = workConfig?.holidays || []; // Format 'YYYY-MM-DD'
 
-    // Normalizuj datę startową do najbliższej godziny roboczej
-    let day = currentDate.getDay();
-    let hour = currentDate.getHours();
-    
-    if (day === 6) { // Sobota
-        currentDate.setDate(currentDate.getDate() + 2);
-        currentDate.setHours(8, 0, 0, 0);
-    } else if (day === 0) { // Niedziela
-        currentDate.setDate(currentDate.getDate() + 1);
-        currentDate.setHours(8, 0, 0, 0);
-    } else if (hour < 8) {
-        currentDate.setHours(8, 0, 0, 0);
-    } else if (hour >= 16) {
-        currentDate.setDate(currentDate.getDate() + (day === 5 ? 3 : 1));
-        currentDate.setHours(8, 0, 0, 0);
-    }
-    
-    while (minutesToAdd > 0) {
+    let minutesRemaining = hoursToAdd * 60;
+    let currentDate = new Date(startDate); // Kopia daty startowej
+
+    // Pętla "skacząca", dopóki nie zużyjemy całego czasu SLA
+    while (minutesRemaining > 0) {
+        
+        // 1. Sprawdź, czy dzisiaj jest dzień pracujący (nie weekend, nie święto)
+        const dayOfWeek = currentDate.getDay(); // 0=Niedziela, 6=Sobota
+        const dateString = currentDate.toISOString().split('T')[0];
+        const isHoliday = holidays.includes(dateString);
+        const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+
+        if (isWeekend || isHoliday) {
+            // Przeskocz do następnego dnia, ustaw godzinę na start pracy
+            currentDate.setDate(currentDate.getDate() + 1);
+            currentDate.setHours(startHour, 0, 0, 0);
+            continue; // Wróć na początek pętli
+        }
+
+        // 2. Obsługa godzin pracy wewnątrz dnia roboczego
+        const currentHour = currentDate.getHours();
+        const currentMinute = currentDate.getMinutes();
+
+        // A. Jeśli jest PRZED pracą -> ustaw na start pracy
+        if (currentHour < startHour) {
+            currentDate.setHours(startHour, 0, 0, 0);
+            continue;
+        }
+
+        // B. Jeśli jest PO pracy -> przeskocz do następnego dnia rano
+        if (currentHour >= endHour) {
+            currentDate.setDate(currentDate.getDate() + 1);
+            currentDate.setHours(startHour, 0, 0, 0);
+            continue;
+        }
+
+        // C. Jesteśmy w godzinach pracy! Liczymy ile minut zostało do końca dnia pracy.
+        // Koniec pracy dzisiaj:
         const endOfWorkDay = new Date(currentDate);
-        endOfWorkDay.setHours(16, 0, 0, 0);
-        
-        const minutesLeftInDay = (endOfWorkDay - currentDate) / 60000;
-        
-        if (minutesToAdd <= minutesLeftInDay) {
-            currentDate.setMinutes(currentDate.getMinutes() + minutesToAdd);
-            minutesToAdd = 0;
+        endOfWorkDay.setHours(endHour, 0, 0, 0);
+
+        const msUntilEndOfDay = endOfWorkDay - currentDate;
+        const minutesUntilEndOfDay = Math.floor(msUntilEndOfDay / 60000);
+
+        if (minutesUntilEndOfDay >= minutesRemaining) {
+            // Zmieścimy się dzisiaj! Dodajemy resztę minut i kończymy.
+            currentDate.setMinutes(currentDate.getMinutes() + minutesRemaining);
+            minutesRemaining = 0;
         } else {
-            minutesToAdd -= minutesLeftInDay;
-            currentDate.setDate(currentDate.getDate() + (currentDate.getDay() === 5 ? 3 : 1));
-            currentDate.setHours(8, 0, 0, 0);
+            // Nie zmieścimy się dzisiaj. Zużywamy to co zostało z dnia...
+            minutesRemaining -= minutesUntilEndOfDay;
+            // ...i przeskakujemy do następnego dnia rano
+            currentDate.setDate(currentDate.getDate() + 1);
+            currentDate.setHours(startHour, 0, 0, 0);
         }
     }
+
     return currentDate;
 }
 
@@ -63,7 +92,6 @@ module.exports = async function (context, req) {
     const decoded = encoded.toString('ascii');
     const clientPrincipal = JSON.parse(decoded);
 
-    // Pobieramy dane z body, w tym opcjonalne 'onBehalfOf'
     const { title, content, attachment, onBehalfOf } = req.body;
 
     if (!title || !content) {
@@ -71,43 +99,32 @@ module.exports = async function (context, req) {
     }
 
     try {
-        // --- LOGIKA "W IMIENIU" ---
         let finalReportingUserEmail = clientPrincipal.userDetails;
         
-        // Jeśli użytkownik ma rolę SD i podał inny e-mail, używamy go
         if (clientPrincipal.userRoles.includes('sd') && onBehalfOf && onBehalfOf.trim() !== "") {
             finalReportingUserEmail = onBehalfOf.trim();
         }
-        // --------------------------
 
-        // KROK 1: Pobierz globalne ustawienia (Kategorie i SLA)
+        // KROK 1: Pobierz globalne ustawienia (Kategorie, SLA, Kalendarz)
         const settingsQuery = { query: "SELECT * FROM c WHERE c.id = 'global_settings'" };
         const { resources: settingsItems } = await ticketsContainer.items.query(settingsQuery).fetchAll();
         
         const globalSettings = settingsItems.length > 0 ? settingsItems[0] : null;
-        
-        if (!globalSettings) {
-            throw new Error("Brak konfiguracji 'global_settings' w bazie danych!");
-        }
+        if (!globalSettings) throw new Error("Brak konfiguracji 'global_settings' w bazie danych!");
 
-        // KROK 2: Wymuszamy kategorię "Inne"
+        // Pobieramy konfigurację kalendarza
+        const workConfig = globalSettings.workConfig || { startHour: 8, endHour: 16, holidays: [] };
+
+        // KROK 2: Kategoria i SLA
         const targetCategoryName = "Inne";
-        
-        // Szukamy konfiguracji dla "Inne" w bazie danych
         let categoryConfig = globalSettings.categories.find(c => c.name === targetCategoryName);
-        
-        // Fallback: jeśli administrator usunął "Inne", bierzemy pierwszą dostępną kategorię
-        if (!categoryConfig) {
-            categoryConfig = globalSettings.categories[0];
-        }
+        if (!categoryConfig) categoryConfig = globalSettings.categories[0];
 
         const selectedSlaHours = categoryConfig.sla;
         const selectedGroup = categoryConfig.assignedGroup;
 
-
-        // KROK 3: Generowanie ID (bez zmian)
+        // KROK 3: ID Zgłoszenia
         const { resource: counterDoc } = await countersContainer.item("ticketSequence", "ticketSequence").read();
-        
         const currentYear = new Date().getFullYear();
         let nextNumber;
 
@@ -119,13 +136,13 @@ module.exports = async function (context, req) {
         }
         
         const newTicketId = `${currentYear}-${padNumber(nextNumber, 4)}`;
-        
         counterDoc.lastNumber = nextNumber;
         await countersContainer.items.upsert(counterDoc);
 
-
-        // KROK 4: Tworzenie zgłoszenia
+        // KROK 4: Obliczamy SLA z uwzględnieniem kalendarza
         const now = new Date();
+        const slaDate = calculateAdvancedSLA(now, selectedSlaHours, workConfig);
+
         const newTicket = {
             id: newTicketId, 
             title: title,
@@ -133,8 +150,8 @@ module.exports = async function (context, req) {
             status: "Nieprzeczytane",
             content: content,
             reportingUser: {
-                email: finalReportingUserEmail, // Tutaj wpisujemy właściwego zgłaszającego
-                name: finalReportingUserEmail // Na razie używamy e-maila jako nazwy (chyba że masz bazę użytkowników)
+                email: finalReportingUserEmail,
+                name: finalReportingUserEmail
             },
             assignedTo: {
                 person: null,
@@ -143,7 +160,7 @@ module.exports = async function (context, req) {
             dates: {
                 createdAt: now.toISOString(),
                 closedAt: null,
-                guaranteedResolutionAt: calculateSLA(now, selectedSlaHours).toISOString()
+                guaranteedResolutionAt: slaDate.toISOString() // Data wyliczona inteligentnie
             },
             attachments: attachment ? [attachment] : [],
             comments: [] 
