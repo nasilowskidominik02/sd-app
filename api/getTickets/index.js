@@ -31,41 +31,13 @@ module.exports = async function (context, req) {
 
         // --- 3. PRZYGOTOWANIE LOGIKI FILTRACJI (JS) ---
         let filterByMyGroups = false;
-        let myAllowedGroups = []; // Tu przechowamy grupy do filtrowania w JS
+        let myAllowedGroups = []; 
 
-        // --- 4. ZBIERANIE GRUP Z USTAWIEŃ ---
-        if (isServiceDesk && quickFilter === 'my_group') {
-            filterByMyGroups = true;
-            try {
-                // Pobieramy ustawienia (zawsze bezpieczne query)
-                const { resources: settings } = await container.items.query(
-                    "SELECT * FROM c WHERE c.id = 'global_settings'",
-                    { enableCrossPartitionQuery: true }
-                ).fetchAll();
-                
-                if (settings && settings.length > 0) {
-                    const config = settings[0];
-                    if (config.groups && Array.isArray(config.groups)) {
-                        const userEmailLower = userEmail.toLowerCase().trim();
-                        
-                        // Zapisujemy nazwy grup (małymi literami) do tablicy w pamięci RAM
-                        myAllowedGroups = config.groups
-                            .filter(g => g.members && g.members.some(m => m.toLowerCase().trim() === userEmailLower))
-                            .map(g => g.name.toLowerCase().trim());
-                    }
-                }
-            } catch (err) {
-                context.log.error("Błąd pobierania grup:", err.message);
-            }
-        }
-
-        // --- 5. BUDOWANIE PROSTEGO ZAPYTANIA SQL ---
-        // UWAGA: Nie dodajemy tu warunku grupy! SQL ma być prosty.
-        
+        // --- 4. FILTRY SQL (WHERE) ---
         let whereClauses = [];
         let parameters = [];
 
-        // Filtry techniczne
+        // Filtry techniczne (stałe)
         whereClauses.push("c.id != 'global_settings'");
         whereClauses.push("(NOT IS_DEFINED(c.type) OR c.type != 'notification')");
 
@@ -75,18 +47,49 @@ module.exports = async function (context, req) {
             parameters.push({ name: "@userEmail", value: userEmail });
         }
 
-        // Filtry statusowe (bezpieczne dla SQL)
+        // --- 5. LOGIKA FILTRÓW DLA SD ---
         if (isServiceDesk) {
-            if (quickFilter === 'open') {
+            
+            // === OPCJA: MOJA GRUPA ===
+            if (quickFilter === 'my_group') {
+                filterByMyGroups = true; // Włączamy filtrowanie grup w JS
+                
+                // A. Dodajemy filtr statusu do SQL (tylko otwarte)
+                // To jest bezpieczne dla bazy i od razu odsieje zamknięte tickety
+                whereClauses.push("c.status != 'Zamknięte' AND c.status != 'Rozwiązane' AND c.status != 'Odrzucone'");
+
+                // B. Pobieramy grupy z ustawień (do filtrowania w JS)
+                try {
+                    const { resources: settings } = await container.items.query(
+                        "SELECT * FROM c WHERE c.id = 'global_settings'",
+                        { enableCrossPartitionQuery: true }
+                    ).fetchAll();
+                    
+                    if (settings && settings.length > 0) {
+                        const config = settings[0];
+                        if (config.groups && Array.isArray(config.groups)) {
+                            const userEmailLower = userEmail.toLowerCase().trim();
+                            
+                            // Zapisujemy nazwy grup (małymi literami)
+                            myAllowedGroups = config.groups
+                                .filter(g => g.members && g.members.some(m => m.toLowerCase().trim() === userEmailLower))
+                                .map(g => g.name.toLowerCase().trim());
+                        }
+                    }
+                } catch (err) {
+                    context.log.error("Błąd pobierania grup:", err.message);
+                }
+            } 
+            // === INNE FILTRY ===
+            else if (quickFilter === 'open') {
                 whereClauses.push("c.status != 'Zamknięte' AND c.status != 'Rozwiązane' AND c.status != 'Odrzucone'");
             }
             else if (quickFilter === 'closed') {
                 whereClauses.push("(c.status = 'Zamknięte' OR c.status = 'Rozwiązane' OR c.status = 'Odrzucone')");
             }
-            // DLA 'my_group' NIE DODAEMY NIC DO SQL! POBIERAMY WSZYSTKO I FILTRUJEMY NIŻEJ.
         }
 
-        // Wyszukiwanie tekstowe (bezpieczne)
+        // --- 6. WYSZUKIWANIE TEKSTOWE ---
         if (searchText) {
             let condition = "";
             switch (searchField) {
@@ -113,7 +116,8 @@ module.exports = async function (context, req) {
             whereString = " WHERE " + whereClauses.join(" AND ");
         }
 
-        // --- 6. POBIERANIE DANYCH (SUROWYCH) ---
+        // --- 7. POBIERANIE DANYCH ---
+        // Pobieramy surowe dane (SQL filtruje statusy i tekst, ale NIE grupy)
         const query = `SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c ${whereString}`;
 
         const { resources: rawTickets } = await container.items.query(
@@ -121,21 +125,18 @@ module.exports = async function (context, req) {
             { enableCrossPartitionQuery: true }
         ).fetchAll();
 
-        // --- 7. FILTROWANIE, SORTOWANIE I PAGINACJA W JAVASCRIPT ---
+        // --- 8. FILTROWANIE GRUP (JS), SORTOWANIE I PAGINACJA ---
         
         let processedTickets = rawTickets;
 
-        // A. FILTROWANIE PO GRUPIE (W JS - BEZPIECZNE)
+        // A. Filtrowanie grup w JS (tylko jeśli wybrano my_group)
         if (filterByMyGroups) {
             if (myAllowedGroups.length === 0) {
-                // User wybrał "Moja grupa", ale nie jest w żadnej -> pusta lista
                 processedTickets = [];
             } else {
                 processedTickets = processedTickets.filter(ticket => {
-                    // Sprawdzamy czy zgłoszenie ma przypisaną grupę
                     if (ticket.assignedTo && ticket.assignedTo.group) {
                         const ticketGroup = ticket.assignedTo.group.toLowerCase().trim();
-                        // Sprawdzamy czy ta grupa jest na liście grup usera
                         return myAllowedGroups.includes(ticketGroup);
                     }
                     return false;
@@ -143,14 +144,14 @@ module.exports = async function (context, req) {
             }
         }
 
-        // B. SORTOWANIE (Malejąco po dacie)
+        // B. Sortowanie (od najnowszych)
         processedTickets.sort((a, b) => {
             const dateA = a.dates && a.dates.createdAt ? new Date(a.dates.createdAt).getTime() : 0;
             const dateB = b.dates && b.dates.createdAt ? new Date(b.dates.createdAt).getTime() : 0;
             return dateB - dateA;
         });
 
-        // C. PAGINACJA
+        // C. Paginacja
         const totalCount = processedTickets.length;
         const totalPages = Math.ceil(totalCount / pageSize);
         const paginatedTickets = processedTickets.slice(offset, offset + pageSize);
