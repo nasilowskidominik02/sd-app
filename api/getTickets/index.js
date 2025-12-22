@@ -51,17 +51,16 @@ module.exports = async function (context, req) {
             if (quickFilter === 'my_group') {
                 let myGroups = [];
                 
-                // TU BYŁ PROBLEM: Pobieranie ustawień mogło wywalać błąd partycji
                 try {
+                    // FIX: Dodajemy warunek c._partitionKey = 'config', żeby wskazać konkretną partycję.
+                    // To najskuteczniejsza metoda na błędy typu "Cross Partition Query".
                     const settingsQuerySpec = { 
-                        query: "SELECT * FROM c WHERE c.id = 'global_settings'" 
+                        query: "SELECT * FROM c WHERE c.id = 'global_settings' AND c._partitionKey = 'config'" 
                     };
                     
-                    // NAPRAWA: Dodajemy feedOptions { enableCrossPartitionQuery: true }
-                    // To mówi bazie: "Przeszukaj wszystko, nawet jeśli nie znasz klucza partycji"
                     const { resources: settings } = await container.items.query(
-                        settingsQuerySpec, 
-                        { enableCrossPartitionQuery: true } 
+                        settingsQuerySpec,
+                        { enableCrossPartitionQuery: true } // Zostawiamy na wszelki wypadek
                     ).fetchAll();
                     
                     if (settings && settings.length > 0) {
@@ -69,19 +68,19 @@ module.exports = async function (context, req) {
                         if (config.groups && Array.isArray(config.groups)) {
                             const userEmailLower = userEmail.toLowerCase();
                             
-                            // Pobieramy nazwy grup
+                            // Bezpieczne filtrowanie grup
                             myGroups = config.groups
                                 .filter(g => g.members && Array.isArray(g.members) && g.members.includes(userEmailLower))
                                 .map(g => g.name);
                         }
                     }
                 } catch (err) {
-                    // Jeśli pobieranie ustawień zawiedzie, logujemy to, ale NIE PRZERYWAMY działania
-                    context.log.error("Warning: Nie udało się pobrać grup użytkownika. Szczegóły:", err.message);
+                    // Logujemy błąd, ale nie przerywamy działania (zwróci 0 wyników)
+                    context.log.error("Warning: Błąd pobierania ustawień grup:", err.message);
                 }
 
                 if (myGroups.length > 0) {
-                    // Generujemy SQL: (c.assignedTo.group = 'Grupa A' OR c.assignedTo.group = 'Grupa B')
+                    // Generujemy zapytanie z OR: (c.assignedTo.group = 'A' OR c.assignedTo.group = 'B')
                     const orConditions = myGroups.map((_, index) => `c.assignedTo.group = @g${index}`);
                     const combinedOr = `(${orConditions.join(' OR ')})`;
                     
@@ -90,11 +89,12 @@ module.exports = async function (context, req) {
                     myGroups.forEach((groupName, index) => {
                         parameters.push({ name: `@g${index}`, value: groupName });
                     });
+
                 } else {
-                    // SD jest zalogowany, wybrał "Moja Grupa", ale nie jest w żadnej grupie -> 0 wyników
+                    // Jeśli SD nie jest w żadnej grupie lub wystąpił błąd -> brak wyników
                     whereClauses.push("1 = 0");
                 }
-            } 
+            }
             else if (quickFilter === 'open') {
                 whereClauses.push("c.status != 'Zamknięte' AND c.status != 'Rozwiązane' AND c.status != 'Odrzucone'");
             }
