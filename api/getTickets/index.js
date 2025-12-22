@@ -50,38 +50,43 @@ module.exports = async function (context, req) {
             if (quickFilter === 'my_group') {
                 let myGroups = [];
                 
-                // =========================================================
-                // NOWOŚĆ: Używamy POINT READ zamiast QUERY SQL
-                // To jest metoda "Bibliotekarza" - 100% skuteczności
-                // =========================================================
+                // Używamy bezpiecznego POINT READ
                 try {
-                    // Odwołujemy się wprost do ID i PartitionKey ("config")
-                    // To omija błędy z partycjami i SQL.
                     const { resource: config } = await container
                         .item("global_settings", "config")
                         .read();
                     
                     if (config && config.groups && Array.isArray(config.groups)) {
-                        const userEmailLower = userEmail.toLowerCase();
+                        const userEmailLower = userEmail.toLowerCase().trim(); // Trim dla pewności
                         
                         myGroups = config.groups
-                            .filter(g => g.members && Array.isArray(g.members) && g.members.includes(userEmailLower))
+                            .filter(g => {
+                                // Sprawdzamy czy members istnieje i czy zawiera maila
+                                if (!g.members || !Array.isArray(g.members)) return false;
+                                // Bezpieczne sprawdzenie (mail w bazie też może mieć spacje/wielkość liter)
+                                return g.members.some(m => m.toLowerCase().trim() === userEmailLower);
+                            })
                             .map(g => g.name);
                     }
                 } catch (err) {
-                    context.log.error("Błąd pobierania ustawień (Point Read):", err.message);
+                    context.log.error("Błąd pobierania ustawień:", err.message);
                 }
-                // =========================================================
 
                 if (myGroups.length > 0) {
-                    // Wpisujemy nazwy grup "na sztywno" do SQL, żeby uniknąć błędu parametrów
-                    // Zabezpieczamy apostrofy (np. grupa "L'Oreal" -> "L''Oreal")
-                    const safeGroups = myGroups.map(g => `'${g.replace(/'/g, "''")}'`).join(", ");
+                    // --- ZMIANA: IGNOROWANIE WIELKOŚCI LITER ---
                     
-                    whereClauses.push(`c.assignedTo.group IN (${safeGroups})`);
+                    // 1. Zamieniamy nazwy grup z ustawień na małe litery
+                    const safeGroups = myGroups
+                        .map(g => `'${g.toLowerCase().trim().replace(/'/g, "''")}'`)
+                        .join(", ");
+                    
+                    // 2. W SQL używamy LOWER(), żeby nazwa w zgłoszeniu też była traktowana jako małe litery
+                    // Zapytanie wygląda teraz: LOWER(c.assignedTo.group) IN ('administratorzy aplikacji', ...)
+                    whereClauses.push(`LOWER(c.assignedTo.group) IN (${safeGroups})`);
 
                 } else {
-                    // Nie znaleziono grup dla tego serwisanta -> 0 wyników
+                    // Debug: Logujemy, że nie znaleziono grup dla tego użytkownika
+                    context.log.warn(`Użytkownik SD ${userEmail} wybrał 'my_group', ale nie znaleziono go w żadnej grupie w global_settings.`);
                     whereClauses.push("1 = 0"); 
                 }
             } 
@@ -122,7 +127,6 @@ module.exports = async function (context, req) {
             countQuery += whereString;
         }
         
-        // Paginacja wpisana wprost do stringa (omija błąd "Invalid input values")
         query += ` ORDER BY c.dates.createdAt DESC OFFSET ${offset} LIMIT ${pageSize}`;
 
         const [countResponse, itemsResponse] = await Promise.all([
