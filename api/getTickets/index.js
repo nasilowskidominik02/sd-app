@@ -30,18 +30,17 @@ module.exports = async function (context, req) {
         const pageSize = 10;
         const offset = (page - 1) * pageSize;
 
-        // --- 3. BAZA ZAPYTANIA ---
+        // --- 3. PRZYGOTOWANIE ZAPYTANIA GŁÓWNEGO ---
         let query = "SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c";
         let countQuery = "SELECT VALUE COUNT(1) FROM c";
         
         let whereClauses = [];
         let parameters = [];
 
-        // Filtry obowiązkowe
+        // Filtry stałe
         whereClauses.push("c.id != 'global_settings'");
         whereClauses.push("(NOT IS_DEFINED(c.type) OR c.type != 'notification')");
 
-        // Zwykły user: widzi tylko swoje
         if (!isServiceDesk) {
             whereClauses.push("c.reportingUser.email = @userEmail");
             parameters.push({ name: "@userEmail", value: userEmail });
@@ -52,42 +51,47 @@ module.exports = async function (context, req) {
             if (quickFilter === 'my_group') {
                 let myGroups = [];
                 
-                // Pobieranie grup z bazy (bezpieczne)
+                // TU BYŁ PROBLEM: Pobieranie ustawień mogło wywalać błąd partycji
                 try {
-                    const settingsQuerySpec = { query: "SELECT * FROM c WHERE c.id = 'global_settings'" };
-                    const { resources: settings } = await container.items.query(settingsQuerySpec).fetchAll();
+                    const settingsQuerySpec = { 
+                        query: "SELECT * FROM c WHERE c.id = 'global_settings'" 
+                    };
+                    
+                    // NAPRAWA: Dodajemy feedOptions { enableCrossPartitionQuery: true }
+                    // To mówi bazie: "Przeszukaj wszystko, nawet jeśli nie znasz klucza partycji"
+                    const { resources: settings } = await container.items.query(
+                        settingsQuerySpec, 
+                        { enableCrossPartitionQuery: true } 
+                    ).fetchAll();
                     
                     if (settings && settings.length > 0) {
                         const config = settings[0];
                         if (config.groups && Array.isArray(config.groups)) {
                             const userEmailLower = userEmail.toLowerCase();
                             
-                            // Znajdź nazwy grup użytkownika
+                            // Pobieramy nazwy grup
                             myGroups = config.groups
                                 .filter(g => g.members && Array.isArray(g.members) && g.members.includes(userEmailLower))
                                 .map(g => g.name);
                         }
                     }
                 } catch (err) {
-                    context.log.error("Warning: Błąd pobierania ustawień grup:", err.message);
+                    // Jeśli pobieranie ustawień zawiedzie, logujemy to, ale NIE PRZERYWAMY działania
+                    context.log.error("Warning: Nie udało się pobrać grup użytkownika. Szczegóły:", err.message);
                 }
 
                 if (myGroups.length > 0) {
-                    // --- METODA PANCERNA (OR) ---
-                    // Generujemy ciąg: (c.assignedTo.group = @g0 OR c.assignedTo.group = @g1 ...)
-                    
+                    // Generujemy SQL: (c.assignedTo.group = 'Grupa A' OR c.assignedTo.group = 'Grupa B')
                     const orConditions = myGroups.map((_, index) => `c.assignedTo.group = @g${index}`);
                     const combinedOr = `(${orConditions.join(' OR ')})`;
                     
                     whereClauses.push(combinedOr);
 
-                    // Dodajemy parametry @g0, @g1 itd.
                     myGroups.forEach((groupName, index) => {
                         parameters.push({ name: `@g${index}`, value: groupName });
                     });
-
                 } else {
-                    // SD bez grupy -> brak wyników
+                    // SD jest zalogowany, wybrał "Moja Grupa", ale nie jest w żadnej grupie -> 0 wyników
                     whereClauses.push("1 = 0");
                 }
             } 
@@ -118,7 +122,7 @@ module.exports = async function (context, req) {
             parameters.push({ name: "@searchRaw", value: rawSearch.trim() });
         }
 
-        // --- 6. SKŁADANIE I WYKONANIE ---
+        // --- 6. WYKONANIE ZAPYTANIA ---
         if (whereClauses.length > 0) {
             const whereString = " WHERE " + whereClauses.join(" AND ");
             query += whereString;
@@ -150,11 +154,7 @@ module.exports = async function (context, req) {
         context.log.error("CRITICAL ERROR in getTickets:", error);
         context.res = { 
             status: 500, 
-            body: { 
-                message: "Internal Server Error", 
-                details: error.message,
-                stack: error.stack 
-            } 
+            body: { message: "Internal Server Error", error: error.message } 
         };
     }
 };
