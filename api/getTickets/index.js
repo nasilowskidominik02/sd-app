@@ -4,159 +4,127 @@ const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
 const container = client.database("ServiceDeskDB").container("Tickets");
 
 module.exports = async function (context, req) {
+    let debugLog = [];
+    const log = (msg) => debugLog.push(msg);
+
+    // Zmienne do raportu końcowego
+    let finalQuery = "";
+    let finalParameters = [];
+
     try {
-        // --- 1. AUTORYZACJA ---
+        log("1. START");
+
+        // --- AUTH ---
         const header = req.headers['x-ms-client-principal'];
-        if (!header) return { status: 401, body: "User is not authenticated." };
-        
-        const encoded = Buffer.from(header, 'base64');
-        const decoded = encoded.toString('ascii');
-        const clientPrincipal = JSON.parse(decoded);
-
-        if (!clientPrincipal || !clientPrincipal.userDetails) {
-             return { status: 403, body: "Invalid user details." };
-        }
-
-        const isServiceDesk = clientPrincipal.userRoles.includes('sd');
+        if (!header) throw new Error("Brak nagłówka auth");
+        const clientPrincipal = JSON.parse(Buffer.from(header, 'base64').toString('ascii'));
+        const isSD = clientPrincipal.userRoles.includes('sd');
         const userEmail = clientPrincipal.userDetails;
-        
-        // --- 2. PARAMETRY ---
-        const page = parseInt(req.query.page) || 1;
-        const rawSearch = req.query.search || '';
-        const searchText = rawSearch.toLowerCase().trim();
-        const searchField = req.query.field || 'id';
-        const quickFilter = req.query.quickFilter || (isServiceDesk ? 'my_group' : 'all');
-        const pageSize = 10;
-        const offset = (page - 1) * pageSize;
+        log(`2. User: ${userEmail}, Role SD: ${isSD}`);
 
-        // --- 3. PRZYGOTOWANIE BAZY ZAPYTANIA ---
-        let countQuery = "SELECT VALUE COUNT(1) FROM c";
-        let whereClauses = [];
+        // --- PARAMS ---
+        const page = parseInt(req.query.page) || 1;
+        const quickFilter = req.query.quickFilter || (isSD ? 'my_group' : 'all');
+        const offset = (page - 1) * 10;
+        log(`3. Filter: ${quickFilter}, Offset: ${offset}`);
+
+        let whereClauses = ["c.id != 'global_settings'", "(NOT IS_DEFINED(c.type) OR c.type != 'notification')"];
         let parameters = [];
 
-        // Filtry podstawowe
-        whereClauses.push("c.id != 'global_settings'");
-        whereClauses.push("(NOT IS_DEFINED(c.type) OR c.type != 'notification')");
-
-        if (!isServiceDesk) {
+        if (!isSD) {
             whereClauses.push("c.reportingUser.email = @userEmail");
             parameters.push({ name: "@userEmail", value: userEmail });
         }
 
-        // --- 4. LOGIKA FILTRÓW DLA SD ---
-        if (isServiceDesk) {
-            if (quickFilter === 'my_group') {
-                let myGroups = [];
-                
-                // Pobieranie ustawień - wciąż używamy SQL z CrossPartition, bo to zadziałało w logach
-                try {
-                    const { resources: settings } = await container.items.query(
-                        "SELECT * FROM c WHERE c.id = 'global_settings'",
-                        { enableCrossPartitionQuery: true }
-                    ).fetchAll();
-                    
-                    if (settings && settings.length > 0) {
-                        const config = settings[0];
-                        if (config.groups && Array.isArray(config.groups)) {
-                            const userEmailLower = userEmail.toLowerCase().trim();
-                            
-                            // Znajdź grupy usera
-                            myGroups = config.groups
-                                .filter(g => {
-                                    if (!g.members || !Array.isArray(g.members)) return false;
-                                    return g.members.some(m => m.toLowerCase().trim() === userEmailLower);
-                                })
-                                .map(g => g.name);
-                        }
-                    }
-                } catch (err) {
-                    context.log.error("Błąd pobierania ustawień:", err.message);
-                }
-
-                if (myGroups.length > 0) {
-                    // Budujemy warunki StringEquals
-                    const groupConditions = myGroups.map(groupName => {
-                        const safeName = groupName.replace(/'/g, "''");
-                        return `StringEquals(c.assignedTo.group, '${safeName}', true)`;
-                    });
-                    
-                    // DODATKOWE ZABEZPIECZENIE: Sprawdzamy czy assignedTo w ogóle istnieje
-                    // Żeby nie wywołać błędu na starych zgłoszeniach bez przypisania
-                    const groupsCheck = `(${groupConditions.join(' OR ')})`;
-                    whereClauses.push(`(IS_DEFINED(c.assignedTo) AND IS_DEFINED(c.assignedTo.group) AND ${groupsCheck})`);
-
-                } else {
-                    whereClauses.push("1 = 0"); 
-                }
-            } 
-            else if (quickFilter === 'open') {
-                whereClauses.push("c.status != 'Zamknięte' AND c.status != 'Rozwiązane' AND c.status != 'Odrzucone'");
-            }
-            else if (quickFilter === 'closed') {
-                whereClauses.push("(c.status = 'Zamknięte' OR c.status = 'Rozwiązane' OR c.status = 'Odrzucone')");
-            }
-        }
-
-        // --- 5. WYSZUKIWANIE TEKSTOWE ---
-        if (searchText) {
-            let condition = "";
-            switch (searchField) {
-                case 'id': condition = "CONTAINS(LOWER(c.id), @search)"; break;
-                case 'title': condition = "CONTAINS(LOWER(c.title), @search)"; break;
-                case 'user': condition = "(CONTAINS(LOWER(c.reportingUser.name), @search) OR CONTAINS(LOWER(c.reportingUser.email), @search))"; break;
-                case 'category': condition = "CONTAINS(LOWER(c.category), @search)"; break;
-                case 'assigned': condition = "(IS_DEFINED(c.assignedTo.person) AND CONTAINS(LOWER(c.assignedTo.person), @search))"; break;
-                case 'group': condition = "CONTAINS(LOWER(c.assignedTo.group), @search)"; break;
-                case 'created': condition = "STARTSWITH(c.dates.createdAt, @searchRaw)"; break;
-                case 'closed': condition = "(IS_DEFINED(c.dates.closedAt) AND STARTSWITH(c.dates.closedAt, @searchRaw))"; break;
-                default: condition = "CONTAINS(LOWER(c.id), @search)";
-            }
-            whereClauses.push(condition);
-            parameters.push({ name: "@search", value: searchText });
+        // --- LOGIKA GRUP ---
+        if (isSD && quickFilter === 'my_group') {
+            log("4. Pobieranie ustawień...");
             
-            if (searchField === 'created' || searchField === 'closed') {
-                parameters.push({ name: "@searchRaw", value: rawSearch.trim() });
+            // Testujemy SQL Query do ustawień (najbardziej kompatybilne)
+            try {
+                const settingsRes = await container.items.query(
+                    "SELECT * FROM c WHERE c.id = 'global_settings'",
+                    { enableCrossPartitionQuery: true }
+                ).fetchAll();
+                
+                const settings = settingsRes.resources;
+                log(`4a. Znaleziono ustawień: ${settings.length}`);
+
+                if (settings.length > 0) {
+                    const groups = settings[0].groups || [];
+                    log(`4b. Dostępne grupy w bazie: ${groups.map(g => g.name).join(', ')}`);
+                    
+                    const userGroups = groups
+                        .filter(g => g.members && g.members.some(m => m.toLowerCase().trim() === userEmail.toLowerCase().trim()))
+                        .map(g => g.name);
+                    
+                    log(`4c. Znalezione grupy użytkownika: ${JSON.stringify(userGroups)}`);
+
+                    if (userGroups.length > 0) {
+                        // Budowanie warunku OR
+                        const conditions = userGroups.map(g => {
+                            const safe = g.replace(/'/g, "''");
+                            return `StringEquals(c.assignedTo.group, '${safe}', true)`;
+                        });
+                        whereClauses.push(`(${conditions.join(' OR ')})`);
+                    } else {
+                        log("4d. Brak grup dla usera -> 1=0");
+                        whereClauses.push("1 = 0");
+                    }
+                }
+            } catch (err) {
+                log(`!!! Błąd pobierania ustawień: ${err.message}`);
             }
+        } 
+        else if (isSD && quickFilter === 'open') {
+            whereClauses.push("c.status != 'Zamknięte' AND c.status != 'Rozwiązane' AND c.status != 'Odrzucone'");
+        }
+        else if (isSD && quickFilter === 'closed') {
+            whereClauses.push("(c.status = 'Zamknięte' OR c.status = 'Rozwiązane' OR c.status = 'Odrzucone')");
         }
 
-        // --- 6. SKŁADANIE ZAPYTANIA ---
-        let whereString = "";
-        if (whereClauses.length > 0) {
-            whereString = " WHERE " + whereClauses.join(" AND ");
-        }
-
-        const finalCountQuery = countQuery + whereString;
-        const finalQuery = `SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c ${whereString} ORDER BY c.dates.createdAt DESC OFFSET ${offset} LIMIT ${pageSize}`;
-
-        // --- KLUCZOWA POPRAWKA ---
-        // Dodajemy { enableCrossPartitionQuery: true } do GŁÓWNYCH zapytań.
-        // To jest wymagane, gdy używamy ORDER BY + OFFSET w zapytaniu, które nie ma w WHERE klucza partycji.
-        // Bez tego baza zwraca "Invalid input values" (błąd 500).
+        // --- SQL ---
+        // Budujemy proste zapytanie bez szukania tekstowego, żeby wyizolować błąd
+        const whereString = " WHERE " + whereClauses.join(" AND ");
         
-        const queryOptions = { enableCrossPartitionQuery: true };
+        // WPISUJEMY OFFSET/LIMIT BEZPOŚREDNIO
+        finalQuery = `SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c ${whereString} ORDER BY c.dates.createdAt DESC OFFSET ${offset} LIMIT 10`;
+        finalParameters = parameters;
 
-        const [countResponse, itemsResponse] = await Promise.all([
-            container.items.query({ query: finalCountQuery, parameters: parameters }, queryOptions).fetchAll(),
-            container.items.query({ query: finalQuery, parameters: parameters }, queryOptions).fetchAll()
-        ]);
+        log(`5. Wykonuję zapytanie główne...`);
+        
+        // UWAGA: enableCrossPartitionQuery jest KLUCZOWE przy ORDER BY
+        const { resources } = await container.items.query(
+            { query: finalQuery, parameters: finalParameters },
+            { enableCrossPartitionQuery: true }
+        ).fetchAll();
+
+        log(`6. Sukces! Pobranno ${resources.length} rekordów.`);
 
         context.res = {
             body: {
-                tickets: itemsResponse.resources,
-                totalCount: countResponse.resources[0],
-                currentPage: page,
-                totalPages: Math.ceil(countResponse.resources[0] / pageSize)
+                debugLog,
+                finalQuery,
+                finalParameters,
+                tickets: resources,
+                totalCount: 100, // Fake count dla testu
+                currentPage: 1,
+                totalPages: 10
             }
         };
 
     } catch (error) {
-        context.log.error("CRITICAL ERROR:", error);
-        context.res = { 
-            status: 500, 
-            body: { 
-                message: "Internal Server Error", 
-                details: error.message 
-            } 
+        // ZWRACAMY 500 ALE Z JSONEM DIAGNOSTYCZNYM
+        context.res = {
+            status: 500,
+            body: {
+                message: "Internal Debug Error",
+                errorDetails: error.message,
+                cosmosActivityId: error.activityId, // Ważne dla Cosmos DB
+                debugLog: debugLog,
+                finalQuery: finalQuery,
+                finalParameters: finalParameters
+            }
         };
     }
 };
