@@ -29,10 +29,9 @@ module.exports = async function (context, req) {
         const pageSize = 10;
         const offset = (page - 1) * pageSize;
 
-        // --- 3. PRZYGOTOWANIE BAZY ZAPYTANIA ---
-        let query = "SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c";
+        // --- 3. PRZYGOTOWANIE ZAPYTANIA ---
         let countQuery = "SELECT VALUE COUNT(1) FROM c";
-        
+        // Zbieramy klauzule WHERE
         let whereClauses = [];
         let parameters = [];
 
@@ -50,16 +49,11 @@ module.exports = async function (context, req) {
             if (quickFilter === 'my_group') {
                 let myGroups = [];
                 
-                // POWRÓT DO SQL QUERY (niezawodne wyszukiwanie ustawień)
+                // POBIERANIE USTAWIEŃ (SQL - Cross Partition Safe)
                 try {
-                    const settingsQuerySpec = { 
-                        query: "SELECT * FROM c WHERE c.id = 'global_settings'" 
-                    };
-                    
-                    // Używamy enableCrossPartitionQuery: true - to znajdzie dokument niezależnie od partycji
                     const { resources: settings } = await container.items.query(
-                        settingsQuerySpec,
-                        { enableCrossPartitionQuery: true } 
+                        "SELECT * FROM c WHERE c.id = 'global_settings'",
+                        { enableCrossPartitionQuery: true }
                     ).fetchAll();
                     
                     if (settings && settings.length > 0) {
@@ -67,32 +61,37 @@ module.exports = async function (context, req) {
                         if (config.groups && Array.isArray(config.groups)) {
                             const userEmailLower = userEmail.toLowerCase().trim();
                             
+                            // Znajdujemy grupy usera (ignorując wielkość liter maila)
                             myGroups = config.groups
                                 .filter(g => {
                                     if (!g.members || !Array.isArray(g.members)) return false;
-                                    // Sprawdzamy maila ignorując wielkość liter
                                     return g.members.some(m => m.toLowerCase().trim() === userEmailLower);
                                 })
-                                .map(g => g.name);
+                                .map(g => g.name); // Pobieramy oryginalne nazwy grup
                         }
-                    } else {
-                        context.log.warn("Nie znaleziono dokumentu global_settings za pomocą SQL.");
                     }
                 } catch (err) {
                     context.log.error("Błąd SQL przy pobieraniu ustawień:", err.message);
                 }
 
                 if (myGroups.length > 0) {
-                    // Wpisujemy grupy na sztywno do zapytania (ignorując wielkość liter)
-                    const safeGroups = myGroups
-                        .map(g => `'${g.toLowerCase().trim().replace(/'/g, "''")}'`)
-                        .join(", ");
+                    // --- OSTATECZNE ROZWIĄZANIE: StringEquals ---
+                    // Generujemy serię warunków OR z funkcją StringEquals(pole, wartosc, true)
+                    // true = ignoruj wielkość liter.
                     
-                    // LOWER(...) zapewnia dopasowanie nawet jak w zgłoszeniu jest "Administratorzy" a w configu "administratorzy"
-                    whereClauses.push(`LOWER(c.assignedTo.group) IN (${safeGroups})`);
+                    const groupConditions = myGroups.map(groupName => {
+                        // Zabezpieczamy apostrofy w nazwie grupy
+                        const safeName = groupName.replace(/'/g, "''");
+                        // Tworzymy warunek: StringEquals(c.assignedTo.group, 'NazwaGrupy', true)
+                        return `StringEquals(c.assignedTo.group, '${safeName}', true)`;
+                    });
+                    
+                    // Łączymy je operatorem OR i otaczamy nawiasem
+                    // Wynik: (StringEquals(..., 'A', true) OR StringEquals(..., 'B', true))
+                    whereClauses.push(`(${groupConditions.join(' OR ')})`);
 
                 } else {
-                    // Nie znaleziono usera w żadnej grupie -> 0 wyników
+                    // Brak grup -> brak wyników
                     whereClauses.push("1 = 0"); 
                 }
             } 
@@ -127,18 +126,20 @@ module.exports = async function (context, req) {
         }
 
         // --- 6. SKŁADANIE ZAPYTANIA ---
+        let whereString = "";
         if (whereClauses.length > 0) {
-            const whereString = " WHERE " + whereClauses.join(" AND ");
-            query += whereString;
-            countQuery += whereString;
+            whereString = " WHERE " + whereClauses.join(" AND ");
         }
-        
-        // Paginacja wpisana BEZPOŚREDNIO w string (omija błąd 500)
-        query += ` ORDER BY c.dates.createdAt DESC OFFSET ${offset} LIMIT ${pageSize}`;
+
+        // Zapytanie o licznik (Count)
+        const finalCountQuery = countQuery + whereString;
+
+        // Zapytanie o dane (Select) z paginacją LITERAMI (by uniknąć błędu parametrów)
+        const finalQuery = `SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c ${whereString} ORDER BY c.dates.createdAt DESC OFFSET ${offset} LIMIT ${pageSize}`;
 
         const [countResponse, itemsResponse] = await Promise.all([
-            container.items.query({ query: countQuery, parameters: parameters }).fetchAll(),
-            container.items.query({ query: query, parameters: parameters }).fetchAll()
+            container.items.query({ query: finalCountQuery, parameters: parameters }).fetchAll(),
+            container.items.query({ query: finalQuery, parameters: parameters }).fetchAll()
         ]);
 
         context.res = {
