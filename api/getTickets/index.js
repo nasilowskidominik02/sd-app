@@ -18,7 +18,7 @@ module.exports = async function (context, req) {
     const searchText = req.query.search ? req.query.search.toLowerCase().trim() : '';
     const searchField = req.query.field || 'id';
     
-    // NOWOŚĆ: Pobieramy szybki filtr. Domyślnie 'my_group' dla SD, 'all' dla reszty
+    // Domyślnie 'my_group' dla SD, 'all' dla reszty
     const quickFilter = req.query.quickFilter || (isServiceDesk ? 'my_group' : 'all');
 
     const pageSize = 10;
@@ -42,24 +42,34 @@ module.exports = async function (context, req) {
     // --- OBSŁUGA SZYBKIEGO FILTRA (DLA SD) ---
     if (isServiceDesk) {
         if (quickFilter === 'my_group') {
-            // Musimy znaleźć grupę użytkownika w ustawieniach
-            const settingsQuery = "SELECT * FROM c WHERE c.id = 'global_settings'";
-            const { resources: settings } = await container.items.query(settingsQuery).fetchAll();
-            
-            let myGroupName = null;
-            if (settings.length > 0 && settings[0].groups) {
-                const userEmailLower = userEmail.toLowerCase();
-                const groupObj = settings[0].groups.find(g => g.members && g.members.includes(userEmailLower));
-                if (groupObj) myGroupName = groupObj.name;
-            }
+            try {
+                // POPRAWKA: Używamy obiektu querySpec zamiast zwykłego stringa
+                const settingsQuerySpec = { 
+                    query: "SELECT * FROM c WHERE c.id = 'global_settings'" 
+                };
+                const { resources: settings } = await container.items.query(settingsQuerySpec).fetchAll();
+                
+                let myGroupName = null;
+                if (settings.length > 0 && settings[0].groups) {
+                    const userEmailLower = userEmail.toLowerCase();
+                    // Szukamy grupy, w której znajduje się mail użytkownika
+                    const groupObj = settings[0].groups.find(g => 
+                        g.members && g.members.includes(userEmailLower)
+                    );
+                    if (groupObj) myGroupName = groupObj.name;
+                }
 
-            if (myGroupName) {
-                whereClauses.push("c.assignedTo.group = @myGroup");
-                parameters.push({ name: "@myGroup", value: myGroupName });
-            } else {
-                // Jeśli użytkownik nie jest w żadnej grupie, a wybrał "Moja grupa", 
-                // to powinien widzieć pustą listę (lub ewentualnie nic nie filtrujemy? Lepiej pokazać 0, żeby nie wprowadzać w błąd).
-                whereClauses.push("1 = 0"); // Fałsz, zwróci 0 wyników
+                if (myGroupName) {
+                    whereClauses.push("c.assignedTo.group = @myGroup");
+                    parameters.push({ name: "@myGroup", value: myGroupName });
+                } else {
+                    // Jeśli SD nie jest w żadnej grupie, a wybrał ten filtr -> pokaż 0 wyników
+                    // (lub usuń ten else, jeśli chcesz pokazać wszystko w takim przypadku)
+                    whereClauses.push("1 = 0"); 
+                }
+            } catch (err) {
+                context.log.error("Błąd pobierania ustawień grup:", err);
+                // W razie błędu nie filtrujemy grupy, żeby nie zablokować widoku całkowicie
             }
         } 
         else if (quickFilter === 'open') {
@@ -68,10 +78,10 @@ module.exports = async function (context, req) {
         else if (quickFilter === 'closed') {
             whereClauses.push("(c.status = 'Zamknięte' OR c.status = 'Rozwiązane' OR c.status = 'Odrzucone')");
         }
-        // 'all' - nie dodajemy żadnego warunku
+        // 'all' - nie dodajemy warunku
     }
 
-    // --- WYSZUKIWANIE TEKSTOWE (działa łącznie z filtrem) ---
+    // --- WYSZUKIWANIE TEKSTOWE ---
     if (searchText) {
         let condition = "";
         switch (searchField) {
@@ -119,7 +129,7 @@ module.exports = async function (context, req) {
         };
 
     } catch (error) {
-        context.log.error(error);
+        context.log.error("Cosmos DB Error:", error);
         context.res = { status: 500, body: "Error connecting to DB" };
     }
 };
