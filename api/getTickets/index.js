@@ -27,15 +27,13 @@ module.exports = async function (context, req) {
         const searchField = req.query.field || 'id';
         const quickFilter = req.query.quickFilter || (isServiceDesk ? 'my_group' : 'all');
         const pageSize = 10;
-        
-        // Obliczamy offset dla JS
         const offset = (page - 1) * pageSize;
 
-        // --- 3. FILTRY (WHERE) ---
+        // --- 3. PRZYGOTOWANIE FILTRÓW (WHERE) ---
         let whereClauses = [];
         let parameters = [];
 
-        // Podstawowe
+        // Filtry obowiązkowe
         whereClauses.push("c.id != 'global_settings'");
         whereClauses.push("(NOT IS_DEFINED(c.type) OR c.type != 'notification')");
 
@@ -49,7 +47,7 @@ module.exports = async function (context, req) {
             if (quickFilter === 'my_group') {
                 let myGroups = [];
                 
-                // Pobieranie ustawień (SQL)
+                // Pobieramy grupy z ustawień
                 try {
                     const { resources: settings } = await container.items.query(
                         "SELECT * FROM c WHERE c.id = 'global_settings'",
@@ -61,23 +59,32 @@ module.exports = async function (context, req) {
                         if (config.groups && Array.isArray(config.groups)) {
                             const userEmailLower = userEmail.toLowerCase().trim();
                             
+                            // Znajdujemy grupy, w których jest user
                             myGroups = config.groups
                                 .filter(g => g.members && g.members.some(m => m.toLowerCase().trim() === userEmailLower))
                                 .map(g => g.name);
                         }
                     }
                 } catch (err) {
-                    context.log.error("Błąd pobierania grup:", err.message);
+                    context.log.error("Groups fetch error:", err.message);
                 }
 
                 if (myGroups.length > 0) {
-                    // Warunki OR z StringEquals
-                    const groupConditions = myGroups.map(groupName => {
-                        const safeName = groupName.replace(/'/g, "''");
-                        return `StringEquals(c.assignedTo.group, '${safeName}', true)`;
-                    });
-                    whereClauses.push(`(${groupConditions.join(' OR ')})`);
+                    // --- ZMIANA TAKTYKI: ARRAY_CONTAINS ---
+                    
+                    // 1. Tworzymy tablicę nazw grup małymi literami
+                    const allowedGroupsLowerCase = myGroups.map(g => g.toLowerCase().trim());
+                    
+                    // 2. Dodajemy tę tablicę jako JEDEN parametr do zapytania
+                    parameters.push({ name: "@allowedGroups", value: allowedGroupsLowerCase });
+
+                    // 3. Warunek SQL:
+                    // Sprawdź czy assignedTo istnieje
+                    // ORAZ czy nazwa grupy (zmieniona na małe litery) znajduje się w naszej tablicy @allowedGroups
+                    whereClauses.push(`(IS_DEFINED(c.assignedTo) AND IS_DEFINED(c.assignedTo.group) AND ARRAY_CONTAINS(@allowedGroups, LOWER(c.assignedTo.group)))`);
+
                 } else {
+                    // User nie ma grup -> brak wyników
                     whereClauses.push("1 = 0"); 
                 }
             } 
@@ -111,15 +118,15 @@ module.exports = async function (context, req) {
             }
         }
 
-        // --- 6. WYKONANIE ZAPYTANIA (CZYSTY SELECT) ---
-        // UWAGA: Usunęliśmy ORDER BY, OFFSET i LIMIT z SQL. 
-        // Baza zwraca po prostu pasujące wyniki.
+        // --- 6. WYKONANIE ZAPYTANIA (Backend - No sorting/paging in SQL) ---
         
         let whereString = "";
         if (whereClauses.length > 0) {
             whereString = " WHERE " + whereClauses.join(" AND ");
         }
 
+        // CZYSTY SQL: Pobieramy dane pasujące do filtrów.
+        // Żadnego ORDER BY, żadnego LIMIT w SQL. To jest najbezpieczniejsza opcja.
         const query = `SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c ${whereString}`;
 
         const { resources: allMatchingTickets } = await container.items.query(
@@ -127,19 +134,19 @@ module.exports = async function (context, req) {
             { enableCrossPartitionQuery: true }
         ).fetchAll();
 
-        // --- 7. SORTOWANIE I PAGINACJA W JS (BACKEND) ---
+        // --- 7. SORTOWANIE I PAGINACJA W JS (Node.js) ---
         
-        // Sortujemy w pamięci serwera (Node.js)
+        // Sortujemy malejąco po dacie (w pamięci)
         allMatchingTickets.sort((a, b) => {
             const dateA = a.dates && a.dates.createdAt ? new Date(a.dates.createdAt).getTime() : 0;
             const dateB = b.dates && b.dates.createdAt ? new Date(b.dates.createdAt).getTime() : 0;
-            return dateB - dateA; // Malejąco
+            return dateB - dateA;
         });
 
         const totalCount = allMatchingTickets.length;
         const totalPages = Math.ceil(totalCount / pageSize);
 
-        // Wycinamy odpowiednią stronę (Slice)
+        // Wycinamy stronę
         const paginatedTickets = allMatchingTickets.slice(offset, offset + pageSize);
 
         context.res = {
