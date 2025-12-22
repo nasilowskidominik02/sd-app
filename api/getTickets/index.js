@@ -27,76 +27,66 @@ module.exports = async function (context, req) {
         const searchField = req.query.field || 'id';
         const quickFilter = req.query.quickFilter || (isServiceDesk ? 'my_group' : 'all');
         const pageSize = 10;
-        
-        // Offset liczymy dla JS
         const offset = (page - 1) * pageSize;
 
-        // --- 3. PRZYGOTOWANIE ZAPYTANIA (WHERE) ---
+        // --- 3. PRZYGOTOWANIE LOGIKI FILTRACJI (JS) ---
+        let filterByMyGroups = false;
+        let myAllowedGroups = []; // Tu przechowamy grupy do filtrowania w JS
+
+        // --- 4. ZBIERANIE GRUP Z USTAWIEŃ ---
+        if (isServiceDesk && quickFilter === 'my_group') {
+            filterByMyGroups = true;
+            try {
+                // Pobieramy ustawienia (zawsze bezpieczne query)
+                const { resources: settings } = await container.items.query(
+                    "SELECT * FROM c WHERE c.id = 'global_settings'",
+                    { enableCrossPartitionQuery: true }
+                ).fetchAll();
+                
+                if (settings && settings.length > 0) {
+                    const config = settings[0];
+                    if (config.groups && Array.isArray(config.groups)) {
+                        const userEmailLower = userEmail.toLowerCase().trim();
+                        
+                        // Zapisujemy nazwy grup (małymi literami) do tablicy w pamięci RAM
+                        myAllowedGroups = config.groups
+                            .filter(g => g.members && g.members.some(m => m.toLowerCase().trim() === userEmailLower))
+                            .map(g => g.name.toLowerCase().trim());
+                    }
+                }
+            } catch (err) {
+                context.log.error("Błąd pobierania grup:", err.message);
+            }
+        }
+
+        // --- 5. BUDOWANIE PROSTEGO ZAPYTANIA SQL ---
+        // UWAGA: Nie dodajemy tu warunku grupy! SQL ma być prosty.
+        
         let whereClauses = [];
         let parameters = [];
 
-        // Filtry obowiązkowe
+        // Filtry techniczne
         whereClauses.push("c.id != 'global_settings'");
         whereClauses.push("(NOT IS_DEFINED(c.type) OR c.type != 'notification')");
 
+        // Zwykły user widzi tylko swoje
         if (!isServiceDesk) {
             whereClauses.push("c.reportingUser.email = @userEmail");
             parameters.push({ name: "@userEmail", value: userEmail });
         }
 
-        // --- 4. LOGIKA FILTRÓW DLA SD ---
+        // Filtry statusowe (bezpieczne dla SQL)
         if (isServiceDesk) {
-            if (quickFilter === 'my_group') {
-                let myGroups = [];
-                
-                // Krok A: Pobierz ustawienia (zawsze działa)
-                try {
-                    const { resources: settings } = await container.items.query(
-                        "SELECT * FROM c WHERE c.id = 'global_settings'",
-                        { enableCrossPartitionQuery: true }
-                    ).fetchAll();
-                    
-                    if (settings && settings.length > 0) {
-                        const config = settings[0];
-                        if (config.groups && Array.isArray(config.groups)) {
-                            const userEmailLower = userEmail.toLowerCase().trim();
-                            
-                            myGroups = config.groups
-                                .filter(g => g.members && g.members.some(m => m.toLowerCase().trim() === userEmailLower))
-                                .map(g => g.name);
-                        }
-                    }
-                } catch (err) {
-                    context.log.error("Groups fetch error:", err.message);
-                }
-
-                if (myGroups.length > 0) {
-                    // Krok B: Budujemy string do klauzuli IN (...)
-                    // Zamiast parametrów, wpisujemy wartości na sztywno. 
-                    // To eliminuje błąd serializacji tablicy w SDK.
-                    
-                    const safeGroups = myGroups
-                        .map(g => `'${g.toLowerCase().trim().replace(/'/g, "''")}'`)
-                        .join(", ");
-                    
-                    // Wynik SQL: LOWER(c.assignedTo.group) IN ('grupa a', 'grupa b')
-                    // Dodajemy IS_DEFINED, żeby LOWER nie wywalił błędu na pustym polu
-                    whereClauses.push(`(IS_DEFINED(c.assignedTo) AND IS_DEFINED(c.assignedTo.group) AND LOWER(c.assignedTo.group) IN (${safeGroups}))`);
-
-                } else {
-                    // SD bez grupy
-                    whereClauses.push("1 = 0"); 
-                }
-            } 
-            else if (quickFilter === 'open') {
+            if (quickFilter === 'open') {
                 whereClauses.push("c.status != 'Zamknięte' AND c.status != 'Rozwiązane' AND c.status != 'Odrzucone'");
             }
             else if (quickFilter === 'closed') {
                 whereClauses.push("(c.status = 'Zamknięte' OR c.status = 'Rozwiązane' OR c.status = 'Odrzucone')");
             }
+            // DLA 'my_group' NIE DODAEMY NIC DO SQL! POBIERAMY WSZYSTKO I FILTRUJEMY NIŻEJ.
         }
 
-        // --- 5. WYSZUKIWANIE TEKSTOWE ---
+        // Wyszukiwanie tekstowe (bezpieczne)
         if (searchText) {
             let condition = "";
             switch (searchField) {
@@ -118,35 +108,52 @@ module.exports = async function (context, req) {
             }
         }
 
-        // --- 6. WYKONANIE ZAPYTANIA (CZYSTY SELECT BEZ SORTOWANIA) ---
-        
         let whereString = "";
         if (whereClauses.length > 0) {
             whereString = " WHERE " + whereClauses.join(" AND ");
         }
 
-        // Proste zapytanie. Baza ma tylko zwrócić pasujące rekordy.
+        // --- 6. POBIERANIE DANYCH (SUROWYCH) ---
         const query = `SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c ${whereString}`;
 
-        const { resources: allMatchingTickets } = await container.items.query(
+        const { resources: rawTickets } = await container.items.query(
             { query, parameters },
             { enableCrossPartitionQuery: true }
         ).fetchAll();
 
-        // --- 7. SORTOWANIE I PAGINACJA W JAVASCRIPT ---
+        // --- 7. FILTROWANIE, SORTOWANIE I PAGINACJA W JAVASCRIPT ---
         
-        // Sortujemy po dacie malejąco
-        allMatchingTickets.sort((a, b) => {
+        let processedTickets = rawTickets;
+
+        // A. FILTROWANIE PO GRUPIE (W JS - BEZPIECZNE)
+        if (filterByMyGroups) {
+            if (myAllowedGroups.length === 0) {
+                // User wybrał "Moja grupa", ale nie jest w żadnej -> pusta lista
+                processedTickets = [];
+            } else {
+                processedTickets = processedTickets.filter(ticket => {
+                    // Sprawdzamy czy zgłoszenie ma przypisaną grupę
+                    if (ticket.assignedTo && ticket.assignedTo.group) {
+                        const ticketGroup = ticket.assignedTo.group.toLowerCase().trim();
+                        // Sprawdzamy czy ta grupa jest na liście grup usera
+                        return myAllowedGroups.includes(ticketGroup);
+                    }
+                    return false;
+                });
+            }
+        }
+
+        // B. SORTOWANIE (Malejąco po dacie)
+        processedTickets.sort((a, b) => {
             const dateA = a.dates && a.dates.createdAt ? new Date(a.dates.createdAt).getTime() : 0;
             const dateB = b.dates && b.dates.createdAt ? new Date(b.dates.createdAt).getTime() : 0;
             return dateB - dateA;
         });
 
-        const totalCount = allMatchingTickets.length;
+        // C. PAGINACJA
+        const totalCount = processedTickets.length;
         const totalPages = Math.ceil(totalCount / pageSize);
-
-        // Wycinamy 10 sztuk dla danej strony
-        const paginatedTickets = allMatchingTickets.slice(offset, offset + pageSize);
+        const paginatedTickets = processedTickets.slice(offset, offset + pageSize);
 
         context.res = {
             body: {
