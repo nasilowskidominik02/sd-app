@@ -22,6 +22,7 @@ module.exports = async function (context, req) {
         
         // --- 2. PARAMETRY ---
         const page = parseInt(req.query.page) || 1;
+        // Search: zabezpieczamy pusty ciąg
         const rawSearch = req.query.search || '';
         const searchText = rawSearch.toLowerCase().trim();
         const searchField = req.query.field || 'id';
@@ -30,14 +31,14 @@ module.exports = async function (context, req) {
         const pageSize = 10;
         const offset = (page - 1) * pageSize;
 
-        // --- 3. BAZA ZAPYTANIA ---
+        // --- 3. PRZYGOTOWANIE ZAPYTANIA ---
         let query = "SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c";
         let countQuery = "SELECT VALUE COUNT(1) FROM c";
         
         let whereClauses = [];
         let parameters = [];
 
-        // Filtry stałe
+        // Filtry podstawowe
         whereClauses.push("c.id != 'global_settings'");
         whereClauses.push("(NOT IS_DEFINED(c.type) OR c.type != 'notification')");
 
@@ -51,15 +52,12 @@ module.exports = async function (context, req) {
             if (quickFilter === 'my_group') {
                 let myGroups = [];
                 
-                // POBIERANIE USTAWIEŃ (Bezpieczne Cross-Partition)
+                // Pobieranie grup użytkownika
                 try {
-                    const settingsQuerySpec = { 
-                        query: "SELECT * FROM c WHERE c.id = 'global_settings'" 
-                    };
-                    
+                    // Pobieramy ustawienia (SQL bez parametrów)
                     const { resources: settings } = await container.items.query(
-                        settingsQuerySpec,
-                        { enableCrossPartitionQuery: true } 
+                        "SELECT * FROM c WHERE c.id = 'global_settings'",
+                        { enableCrossPartitionQuery: true }
                     ).fetchAll();
                     
                     if (settings && settings.length > 0) {
@@ -67,28 +65,28 @@ module.exports = async function (context, req) {
                         if (config.groups && Array.isArray(config.groups)) {
                             const userEmailLower = userEmail.toLowerCase();
                             
-                            // Wyciągamy nazwy grup
+                            // Znajdujemy nazwy grup, w których jest user
                             myGroups = config.groups
                                 .filter(g => g.members && Array.isArray(g.members) && g.members.includes(userEmailLower))
                                 .map(g => g.name);
                         }
                     }
                 } catch (err) {
-                    context.log.error("Warning: Settings fetch failed", err.message);
+                    context.log.error("Groups fetch error:", err.message);
                 }
 
                 if (myGroups.length > 0) {
-                    // Generujemy OR: (group = 'A' OR group = 'B')
-                    const orConditions = myGroups.map((_, index) => `c.assignedTo.group = @g${index}`);
-                    const combinedOr = `(${orConditions.join(' OR ')})`;
+                    // --- ZMIANA KLUCZOWA (Bypass błędu "Invalid Input") ---
+                    // Zamiast parametrów @g0, @g1, wpisujemy nazwy grup wprost do stringa SQL.
+                    // Używamy replace, aby zabezpieczyć ewentualne apostrofy w nazwie grupy.
                     
-                    whereClauses.push(combinedOr);
+                    const safeGroups = myGroups.map(g => `'${g.replace(/'/g, "''")}'`).join(", ");
+                    
+                    // Wynik np.: c.assignedTo.group IN ('Pierwsza linia wsparcia', 'Administratorzy')
+                    whereClauses.push(`c.assignedTo.group IN (${safeGroups})`);
 
-                    myGroups.forEach((groupName, index) => {
-                        parameters.push({ name: `@g${index}`, value: groupName });
-                    });
                 } else {
-                    // Nie znaleziono grupy -> 0 wyników
+                    // User nie jest w żadnej grupie -> 0 wyników
                     whereClauses.push("1 = 0"); 
                 }
             } 
@@ -103,6 +101,7 @@ module.exports = async function (context, req) {
         // --- 5. WYSZUKIWANIE TEKSTOWE ---
         if (searchText) {
             let condition = "";
+            // Generujemy warunki wyszukiwania
             switch (searchField) {
                 case 'id': condition = "CONTAINS(LOWER(c.id), @search)"; break;
                 case 'title': condition = "CONTAINS(LOWER(c.title), @search)"; break;
@@ -117,7 +116,7 @@ module.exports = async function (context, req) {
             whereClauses.push(condition);
             parameters.push({ name: "@search", value: searchText });
             
-            // Parametr rawSearch dodajemy tylko, jeśli faktycznie jest używany w zapytaniu (dla dat)
+            // Parametr @searchRaw dodajemy tylko jeśli jest potrzebny (daty), żeby uniknąć błędu nieużywanego parametru
             if (searchField === 'created' || searchField === 'closed') {
                 parameters.push({ name: "@searchRaw", value: rawSearch.trim() });
             }
@@ -130,14 +129,10 @@ module.exports = async function (context, req) {
             countQuery += whereString;
         }
         
-        // --- KLUCZOWA POPRAWKA ---
-        // Zamiast parametryzować OFFSET i LIMIT (@offset, @limit), 
-        // wpisujemy wartości liczbowe bezpośrednio do stringa SQL.
-        // To naprawia błąd "One of the input values is invalid".
-        
+        // --- PAGINACJA W STRINGU (Bez parametrów) ---
         query += ` ORDER BY c.dates.createdAt DESC OFFSET ${offset} LIMIT ${pageSize}`;
 
-        // Wykonanie (parametry są teraz identyczne dla obu zapytań)
+        // Wykonanie zapytań
         const [countResponse, itemsResponse] = await Promise.all([
             container.items.query({ query: countQuery, parameters: parameters }).fetchAll(),
             container.items.query({ query: query, parameters: parameters }).fetchAll()
