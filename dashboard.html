@@ -289,49 +289,58 @@
             }
         }
 
-        // --- WKLEJ TO W MIEJSCE STAREJ FUNKCJI loadTickets ---
         async function loadTickets() {
+            // 1. Pobieranie elementów filtrów
             const searchInput = document.getElementById('search-input');
             const fieldSelect = document.getElementById('search-field');
-            const quickFilterSelect = document.getElementById('quick-filter'); // <--- NOWOŚĆ
+            const quickFilterSelect = document.getElementById('quick-filter');
             
+            // 2. Pobieranie wartości (z zabezpieczeniem, jeśli element nie istnieje)
             const searchTerm = searchInput ? searchInput.value : '';
             const searchField = fieldSelect ? fieldSelect.value : 'id';
-            const quickFilter = quickFilterSelect ? quickFilterSelect.value : 'all'; // <--- NOWOŚĆ
+            // Jeśli select nie istnieje (zwykły user), ustawiamy 'all'
+            const quickFilter = quickFilterSelect ? quickFilterSelect.value : 'all';
 
             const tbody = document.getElementById('tickets-tbody');
-            tbody.innerHTML = '<tr><td colspan="10">Ładowanie zgłoszeń...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">Ładowanie zgłoszeń...</td></tr>';
             
             try {
-                const encodedSearch = encodeURIComponent(searchTerm);
-                const encodedField = encodeURIComponent(searchField);
-                const encodedQuick = encodeURIComponent(quickFilter); // <--- NOWOŚĆ
+                // 3. Budowanie parametrów URL
+                const params = new URLSearchParams({
+                    page: currentPage,
+                    search: searchTerm,
+                    field: searchField,
+                    quickFilter: quickFilter
+                });
                 
-                // Dodajemy &quickFilter=... do URL
-                const response = await fetch(`/api/getTickets?page=${currentPage}&search=${encodedSearch}&field=${encodedField}&quickFilter=${encodedQuick}`);
+                // Wysyłamy zapytanie
+                const response = await fetch(`/api/getTickets?${params.toString()}`);
                 
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
                 
-                // ... reszta funkcji BEZ ZMIAN (kopiuj-wklej starą logikę renderowania) ...
                 const { tickets, totalPages } = data;
 
                 tbody.innerHTML = '';
-                if (tickets.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="10">Brak zgłoszeń. (Filtr: ${quickFilter})</td></tr>`;
+                
+                // 4. Obsługa braku wyników
+                if (!tickets || tickets.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;">Brak zgłoszeń spełniających kryteria.</td></tr>`;
                     renderPagination(0, 0);
                     return;
                 }
-
+                
+                // 5. Generowanie wierszy
                 tickets.forEach(ticket => {
                     const row = tbody.insertRow();
                     row.className = 'ticket-row';
                     row.dataset.ticketId = ticket.id;
                     row.onclick = () => openTicketModal(ticket.id);
 
+                    // Kolorowanie SLA (tylko dla otwartych)
                     const isClosed = ['Rozwiązane', 'Odrzucone', 'Zamknięte'].includes(ticket.status);
 
-                    if (!isClosed) {
+                    if (!isClosed && ticket.dates && ticket.dates.guaranteedResolutionAt) {
                         const now = new Date();
                         const slaTime = new Date(ticket.dates.guaranteedResolutionAt);
                         const diffMs = slaTime.getTime() - now.getTime();
@@ -341,13 +350,15 @@
                         else if (diffHours <= 2) { row.classList.add('sla-warning'); }
                     }
 
+                    // Przygotowanie danych do wyświetlenia
                     const statusClass = `status-${ticket.status.toLowerCase().replace(/\s/g, '-')}`;
-                    const reportingUserDisplay = escapeHTML(ticket.reportingUser.name).replace('@', '<br>@');
-                    const personDisplay = ticket.assignedTo.person ? escapeHTML(ticket.assignedTo.person).replace('@', '<br>@') : '---';
+                    const reportingUserDisplay = ticket.reportingUser ? escapeHTML(ticket.reportingUser.name).replace('@', '<br>@') : '---';
+                    const personDisplay = ticket.assignedTo && ticket.assignedTo.person ? escapeHTML(ticket.assignedTo.person).replace('@', '<br>@') : '---';
+                    const groupDisplay = ticket.assignedTo && ticket.assignedTo.group ? escapeHTML(ticket.assignedTo.group) : '';
 
-                    const createdDisplay = formatDateTwoLines(ticket.dates.createdAt);
-                    const slaDisplay = formatDateTwoLines(ticket.dates.guaranteedResolutionAt);
-                    const closedDisplay = formatDateTwoLines(ticket.dates.closedAt);
+                    const createdDisplay = ticket.dates ? formatDateTwoLines(ticket.dates.createdAt) : '-';
+                    const slaDisplay = ticket.dates ? formatDateTwoLines(ticket.dates.guaranteedResolutionAt) : '-';
+                    const closedDisplay = ticket.dates ? formatDateTwoLines(ticket.dates.closedAt) : '-';
 
                     row.innerHTML = `
                         <td>${escapeHTML(ticket.id)}</td>
@@ -356,7 +367,7 @@
                         <td>${reportingUserDisplay}</td>
                         <td>${escapeHTML(ticket.category)}</td>
                         <td>${personDisplay}</td>
-                        <td>${escapeHTML(ticket.assignedTo.group)}</td>
+                        <td>${groupDisplay}</td>
                         <td>${createdDisplay}</td>
                         <td>${slaDisplay}</td>
                         <td>${closedDisplay}</td>
