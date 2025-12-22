@@ -28,14 +28,14 @@ module.exports = async function (context, req) {
         const quickFilter = req.query.quickFilter || (isServiceDesk ? 'my_group' : 'all');
         const pageSize = 10;
         
-        // Obliczamy offset dla JS (nie dla SQL)
+        // Obliczamy offset dla JS
         const offset = (page - 1) * pageSize;
 
-        // --- 3. PRZYGOTOWANIE FILTRÓW (WHERE) ---
+        // --- 3. FILTRY (WHERE) ---
         let whereClauses = [];
         let parameters = [];
 
-        // Filtry obowiązkowe
+        // Podstawowe
         whereClauses.push("c.id != 'global_settings'");
         whereClauses.push("(NOT IS_DEFINED(c.type) OR c.type != 'notification')");
 
@@ -49,7 +49,7 @@ module.exports = async function (context, req) {
             if (quickFilter === 'my_group') {
                 let myGroups = [];
                 
-                // Pobieramy ustawienia (SQL Query - najbezpieczniejsze)
+                // Pobieranie ustawień (SQL)
                 try {
                     const { resources: settings } = await container.items.query(
                         "SELECT * FROM c WHERE c.id = 'global_settings'",
@@ -67,21 +67,17 @@ module.exports = async function (context, req) {
                         }
                     }
                 } catch (err) {
-                    context.log.error("Settings fetch error:", err.message);
+                    context.log.error("Błąd pobierania grup:", err.message);
                 }
 
                 if (myGroups.length > 0) {
-                    // Budujemy warunki OR z StringEquals
+                    // Warunki OR z StringEquals
                     const groupConditions = myGroups.map(groupName => {
                         const safeName = groupName.replace(/'/g, "''");
                         return `StringEquals(c.assignedTo.group, '${safeName}', true)`;
                     });
-                    
-                    // (Grupa A lub Grupa B)
                     whereClauses.push(`(${groupConditions.join(' OR ')})`);
-
                 } else {
-                    // SD bez grupy -> brak wyników
                     whereClauses.push("1 = 0"); 
                 }
             } 
@@ -115,15 +111,15 @@ module.exports = async function (context, req) {
             }
         }
 
-        // --- 6. WYKONANIE ZAPYTANIA (BEZ ORDER BY i OFFSET W SQL) ---
+        // --- 6. WYKONANIE ZAPYTANIA (CZYSTY SELECT) ---
+        // UWAGA: Usunęliśmy ORDER BY, OFFSET i LIMIT z SQL. 
+        // Baza zwraca po prostu pasujące wyniki.
         
         let whereString = "";
         if (whereClauses.length > 0) {
             whereString = " WHERE " + whereClauses.join(" AND ");
         }
 
-        // Pobieramy WSZYSTKIE pasujące rekordy (ograniczamy tylko polami SELECT, żeby było lekko)
-        // Zauważ brak ORDER BY i OFFSET/LIMIT - to eliminuje błąd bazy danych.
         const query = `SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c ${whereString}`;
 
         const { resources: allMatchingTickets } = await container.items.query(
@@ -131,21 +127,19 @@ module.exports = async function (context, req) {
             { enableCrossPartitionQuery: true }
         ).fetchAll();
 
-        // --- 7. SORTOWANIE I PAGINACJA W JAVASCRIPT (Backend) ---
+        // --- 7. SORTOWANIE I PAGINACJA W JS (BACKEND) ---
         
-        // Sortujemy malejąco po dacie (od najnowszych)
-        // JavaScript robi to w pamięci RAM, co jest bardzo szybkie dla < 1000 elementów
+        // Sortujemy w pamięci serwera (Node.js)
         allMatchingTickets.sort((a, b) => {
-            const dateA = new Date(a.dates.createdAt).getTime();
-            const dateB = new Date(b.dates.createdAt).getTime();
-            return dateB - dateA;
+            const dateA = a.dates && a.dates.createdAt ? new Date(a.dates.createdAt).getTime() : 0;
+            const dateB = b.dates && b.dates.createdAt ? new Date(b.dates.createdAt).getTime() : 0;
+            return dateB - dateA; // Malejąco
         });
 
         const totalCount = allMatchingTickets.length;
         const totalPages = Math.ceil(totalCount / pageSize);
 
-        // Wycinamy odpowiedni kawałek tablicy (Paginacja)
-        // np. strona 1: od 0 do 10, strona 2: od 10 do 20
+        // Wycinamy odpowiednią stronę (Slice)
         const paginatedTickets = allMatchingTickets.slice(offset, offset + pageSize);
 
         context.res = {
