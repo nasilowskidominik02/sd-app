@@ -43,33 +43,43 @@ module.exports = async function (context, req) {
     if (isServiceDesk) {
         if (quickFilter === 'my_group') {
             try {
-                // POPRAWKA: Używamy obiektu querySpec zamiast zwykłego stringa
+                // Pobieramy ustawienia
                 const settingsQuerySpec = { 
                     query: "SELECT * FROM c WHERE c.id = 'global_settings'" 
                 };
                 const { resources: settings } = await container.items.query(settingsQuerySpec).fetchAll();
                 
                 let myGroupName = null;
-                if (settings.length > 0 && settings[0].groups) {
+
+                // --- ZABEZPIECZENIE PRZED BŁĘDEM 500 ---
+                // Sprawdzamy czy settings[0] istnieje ORAZ czy ma właściwość groups ORAZ czy groups to tablica
+                if (settings.length > 0 && settings[0].groups && Array.isArray(settings[0].groups)) {
+                    
                     const userEmailLower = userEmail.toLowerCase();
-                    // Szukamy grupy, w której znajduje się mail użytkownika
+                    
+                    // Szukamy grupy bezpiecznie (sprawdzamy czy g.members istnieje)
                     const groupObj = settings[0].groups.find(g => 
-                        g.members && g.members.includes(userEmailLower)
+                        g.members && Array.isArray(g.members) && g.members.includes(userEmailLower)
                     );
-                    if (groupObj) myGroupName = groupObj.name;
+                    
+                    if (groupObj) {
+                        myGroupName = groupObj.name;
+                    }
                 }
 
                 if (myGroupName) {
                     whereClauses.push("c.assignedTo.group = @myGroup");
                     parameters.push({ name: "@myGroup", value: myGroupName });
                 } else {
-                    // Jeśli SD nie jest w żadnej grupie, a wybrał ten filtr -> pokaż 0 wyników
-                    // (lub usuń ten else, jeśli chcesz pokazać wszystko w takim przypadku)
+                    // Jeśli nie znaleziono grupy (użytkownik nie jest przypisany lub brak ustawień),
+                    // dodajemy warunek, który zawsze zwróci fałsz (brak wyników), 
+                    // zamiast pokazywać wszystkie zgłoszenia (co mogłoby być mylące).
                     whereClauses.push("1 = 0"); 
                 }
             } catch (err) {
-                context.log.error("Błąd pobierania ustawień grup:", err);
-                // W razie błędu nie filtrujemy grupy, żeby nie zablokować widoku całkowicie
+                context.log.error("Błąd logiczny przy filtrze my_group:", err);
+                // W razie błędu też nie pokazujemy nic, żeby nie wywalić 500 na frontend
+                whereClauses.push("1 = 0");
             }
         } 
         else if (quickFilter === 'open') {
