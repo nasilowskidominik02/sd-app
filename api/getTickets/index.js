@@ -27,9 +27,11 @@ module.exports = async function (context, req) {
         const searchField = req.query.field || 'id';
         const quickFilter = req.query.quickFilter || (isServiceDesk ? 'my_group' : 'all');
         const pageSize = 10;
+        
+        // Offset liczymy dla JS
         const offset = (page - 1) * pageSize;
 
-        // --- 3. PRZYGOTOWANIE FILTRÓW (WHERE) ---
+        // --- 3. PRZYGOTOWANIE ZAPYTANIA (WHERE) ---
         let whereClauses = [];
         let parameters = [];
 
@@ -47,7 +49,7 @@ module.exports = async function (context, req) {
             if (quickFilter === 'my_group') {
                 let myGroups = [];
                 
-                // Pobieramy grupy z ustawień
+                // Krok A: Pobierz ustawienia (zawsze działa)
                 try {
                     const { resources: settings } = await container.items.query(
                         "SELECT * FROM c WHERE c.id = 'global_settings'",
@@ -59,7 +61,6 @@ module.exports = async function (context, req) {
                         if (config.groups && Array.isArray(config.groups)) {
                             const userEmailLower = userEmail.toLowerCase().trim();
                             
-                            // Znajdujemy grupy, w których jest user
                             myGroups = config.groups
                                 .filter(g => g.members && g.members.some(m => m.toLowerCase().trim() === userEmailLower))
                                 .map(g => g.name);
@@ -70,21 +71,20 @@ module.exports = async function (context, req) {
                 }
 
                 if (myGroups.length > 0) {
-                    // --- ZMIANA TAKTYKI: ARRAY_CONTAINS ---
+                    // Krok B: Budujemy string do klauzuli IN (...)
+                    // Zamiast parametrów, wpisujemy wartości na sztywno. 
+                    // To eliminuje błąd serializacji tablicy w SDK.
                     
-                    // 1. Tworzymy tablicę nazw grup małymi literami
-                    const allowedGroupsLowerCase = myGroups.map(g => g.toLowerCase().trim());
+                    const safeGroups = myGroups
+                        .map(g => `'${g.toLowerCase().trim().replace(/'/g, "''")}'`)
+                        .join(", ");
                     
-                    // 2. Dodajemy tę tablicę jako JEDEN parametr do zapytania
-                    parameters.push({ name: "@allowedGroups", value: allowedGroupsLowerCase });
-
-                    // 3. Warunek SQL:
-                    // Sprawdź czy assignedTo istnieje
-                    // ORAZ czy nazwa grupy (zmieniona na małe litery) znajduje się w naszej tablicy @allowedGroups
-                    whereClauses.push(`(IS_DEFINED(c.assignedTo) AND IS_DEFINED(c.assignedTo.group) AND ARRAY_CONTAINS(@allowedGroups, LOWER(c.assignedTo.group)))`);
+                    // Wynik SQL: LOWER(c.assignedTo.group) IN ('grupa a', 'grupa b')
+                    // Dodajemy IS_DEFINED, żeby LOWER nie wywalił błędu na pustym polu
+                    whereClauses.push(`(IS_DEFINED(c.assignedTo) AND IS_DEFINED(c.assignedTo.group) AND LOWER(c.assignedTo.group) IN (${safeGroups}))`);
 
                 } else {
-                    // User nie ma grup -> brak wyników
+                    // SD bez grupy
                     whereClauses.push("1 = 0"); 
                 }
             } 
@@ -118,15 +118,14 @@ module.exports = async function (context, req) {
             }
         }
 
-        // --- 6. WYKONANIE ZAPYTANIA (Backend - No sorting/paging in SQL) ---
+        // --- 6. WYKONANIE ZAPYTANIA (CZYSTY SELECT BEZ SORTOWANIA) ---
         
         let whereString = "";
         if (whereClauses.length > 0) {
             whereString = " WHERE " + whereClauses.join(" AND ");
         }
 
-        // CZYSTY SQL: Pobieramy dane pasujące do filtrów.
-        // Żadnego ORDER BY, żadnego LIMIT w SQL. To jest najbezpieczniejsza opcja.
+        // Proste zapytanie. Baza ma tylko zwrócić pasujące rekordy.
         const query = `SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c ${whereString}`;
 
         const { resources: allMatchingTickets } = await container.items.query(
@@ -134,9 +133,9 @@ module.exports = async function (context, req) {
             { enableCrossPartitionQuery: true }
         ).fetchAll();
 
-        // --- 7. SORTOWANIE I PAGINACJA W JS (Node.js) ---
+        // --- 7. SORTOWANIE I PAGINACJA W JAVASCRIPT ---
         
-        // Sortujemy malejąco po dacie (w pamięci)
+        // Sortujemy po dacie malejąco
         allMatchingTickets.sort((a, b) => {
             const dateA = a.dates && a.dates.createdAt ? new Date(a.dates.createdAt).getTime() : 0;
             const dateB = b.dates && b.dates.createdAt ? new Date(b.dates.createdAt).getTime() : 0;
@@ -146,7 +145,7 @@ module.exports = async function (context, req) {
         const totalCount = allMatchingTickets.length;
         const totalPages = Math.ceil(totalCount / pageSize);
 
-        // Wycinamy stronę
+        // Wycinamy 10 sztuk dla danej strony
         const paginatedTickets = allMatchingTickets.slice(offset, offset + pageSize);
 
         context.res = {
