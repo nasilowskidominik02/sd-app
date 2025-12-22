@@ -55,7 +55,7 @@ module.exports = async function (context, req) {
                     // FIX: Dodajemy warunek c._partitionKey = 'config', żeby wskazać konkretną partycję.
                     // To najskuteczniejsza metoda na błędy typu "Cross Partition Query".
                     const settingsQuerySpec = { 
-                        query: "SELECT * FROM c WHERE c.id = 'global_settings' AND c._partitionKey = 'config'" 
+                        query: "SELECT * FROM c WHERE c.id = 'global_settings' AND c._partitionKey = 'groups'" 
                     };
                     
                     const { resources: settings } = await container.items.query(
