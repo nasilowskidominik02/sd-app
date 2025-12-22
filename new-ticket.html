@@ -190,9 +190,20 @@
 
         const fileInput = document.getElementById('attachment');
         const fileNameDisplay = document.getElementById('file-name');
+        
         fileInput.addEventListener('change', () => {
             if (fileInput.files.length > 0) {
-                fileNameDisplay.textContent = `Wybrano plik: ${fileInput.files[0].name}`;
+                const file = fileInput.files[0];
+                const maxSize = 50 * 1024 * 1024; // 50 MB w bajtach
+
+                if (file.size > maxSize) {
+                    alert("Plik jest za duży! Maksymalny rozmiar to 50MB.");
+                    fileInput.value = ""; // Czyścimy wybór
+                    fileNameDisplay.textContent = "";
+                    return;
+                }
+
+                fileNameDisplay.textContent = `Wybrano plik: ${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB)`;
             } else {
                 fileNameDisplay.textContent = '';
             }
