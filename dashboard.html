@@ -51,7 +51,17 @@
             <main class="main-content">
                 <div class="toolbar">
                     <h1 id="dashboard-title">Twoje ostatnie zgłoszenia</h1>
+                    
                     <div class="search-container">
+                        <select id="quick-filter" class="search-select" style="font-weight: 500; border-color: var(--primary-blue);">
+                            <option value="my_group">Moja Grupa (Domyślne)</option>
+                            <option value="all">Wszystkie zgłoszenia</option>
+                            <option value="open">Otwarte zgłoszenia</option>
+                            <option value="closed">Zamknięte zgłoszenia</option>
+                        </select>
+                        
+                        <div style="width: 1px; height: 24px; background: #ddd; margin: 0 8px;"></div>
+
                         <select id="search-field" class="search-select">
                             <option value="id">ID</option>
                             <option value="title">Tytuł</option>
@@ -281,38 +291,38 @@
 
         // --- WKLEJ TO W MIEJSCE STAREJ FUNKCJI loadTickets ---
         async function loadTickets() {
-            // 1. Pobieramy to, co użytkownik wybrał z listy i wpisał w pole
             const searchInput = document.getElementById('search-input');
             const fieldSelect = document.getElementById('search-field');
+            const quickFilterSelect = document.getElementById('quick-filter'); // <--- NOWOŚĆ
             
-            // Zabezpieczenie: jeśli elementy nie istnieją (np. błąd HTML), używamy pustych wartości
             const searchTerm = searchInput ? searchInput.value : '';
             const searchField = fieldSelect ? fieldSelect.value : 'id';
+            const quickFilter = quickFilterSelect ? quickFilterSelect.value : 'all'; // <--- NOWOŚĆ
 
             const tbody = document.getElementById('tickets-tbody');
             tbody.innerHTML = '<tr><td colspan="10">Ładowanie zgłoszeń...</td></tr>';
             
             try {
-                // 2. Kodujemy parametry do URL (np. spacje na %20)
                 const encodedSearch = encodeURIComponent(searchTerm);
                 const encodedField = encodeURIComponent(searchField);
+                const encodedQuick = encodeURIComponent(quickFilter); // <--- NOWOŚĆ
                 
-                // 3. Wysyłamy zapytanie do API z dwoma parametrami: search i field
-                const response = await fetch(`/api/getTickets?page=${currentPage}&search=${encodedSearch}&field=${encodedField}`);
+                // Dodajemy &quickFilter=... do URL
+                const response = await fetch(`/api/getTickets?page=${currentPage}&search=${encodedSearch}&field=${encodedField}&quickFilter=${encodedQuick}`);
                 
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
                 
+                // ... reszta funkcji BEZ ZMIAN (kopiuj-wklej starą logikę renderowania) ...
                 const { tickets, totalPages } = data;
 
                 tbody.innerHTML = '';
                 if (tickets.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="10">Brak zgłoszeń spełniających kryteria.</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="10">Brak zgłoszeń. (Filtr: ${quickFilter})</td></tr>`;
                     renderPagination(0, 0);
                     return;
                 }
-                
-                // 4. Generowanie wierszy tabeli (to pozostaje bez zmian)
+
                 tickets.forEach(ticket => {
                     const row = tbody.insertRow();
                     row.className = 'ticket-row';
@@ -695,6 +705,10 @@
 
                     const reportsLink = document.getElementById('reports-link');
                     if(reportsLink) reportsLink.classList.remove('hidden');
+                } else {
+                    // UKRYWAMY FILTR DLA ZWYKŁYCH USERÓW
+                    const quickFilter = document.getElementById('quick-filter');
+                    if(quickFilter) quickFilter.classList.add('hidden');
                 }
 
                 await fetchCategories();
@@ -745,6 +759,12 @@
                 console.error('Błąd inicjalizacji panelu:', error);
             }
         }
+
+        // Obsługa zmiany szybkiego filtra
+        document.getElementById('quick-filter').addEventListener('change', () => {
+            currentPage = 1;
+            loadTickets(); // Przeładowanie tabeli
+        });
 
         initializeDashboard();
     </script>

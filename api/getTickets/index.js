@@ -15,11 +15,12 @@ module.exports = async function (context, req) {
     const userEmail = clientPrincipal.userDetails;
     
     const page = parseInt(req.query.page) || 1;
-    
-    // Pobieramy parametry wyszukiwania
     const searchText = req.query.search ? req.query.search.toLowerCase().trim() : '';
-    const searchField = req.query.field || 'id'; // Domyślnie szukaj po ID
+    const searchField = req.query.field || 'id';
     
+    // NOWOŚĆ: Pobieramy szybki filtr. Domyślnie 'my_group' dla SD, 'all' dla reszty
+    const quickFilter = req.query.quickFilter || (isServiceDesk ? 'my_group' : 'all');
+
     const pageSize = 10;
     const offset = (page - 1) * pageSize;
 
@@ -32,54 +33,60 @@ module.exports = async function (context, req) {
     whereClauses.push("c.id != 'global_settings'");
     whereClauses.push("(NOT IS_DEFINED(c.type) OR c.type != 'notification')");
 
+    // Jeśli to zwykły user, ZAWSZE widzi tylko swoje (niezależnie od filtra)
     if (!isServiceDesk) {
         whereClauses.push("c.reportingUser.email = @userEmail");
         parameters.push({ name: "@userEmail", value: userEmail });
     }
 
-    // --- LOGIKA WYSZUKIWANIA PO KONKRETNYM POLU ---
+    // --- OBSŁUGA SZYBKIEGO FILTRA (DLA SD) ---
+    if (isServiceDesk) {
+        if (quickFilter === 'my_group') {
+            // Musimy znaleźć grupę użytkownika w ustawieniach
+            const settingsQuery = "SELECT * FROM c WHERE c.id = 'global_settings'";
+            const { resources: settings } = await container.items.query(settingsQuery).fetchAll();
+            
+            let myGroupName = null;
+            if (settings.length > 0 && settings[0].groups) {
+                const userEmailLower = userEmail.toLowerCase();
+                const groupObj = settings[0].groups.find(g => g.members && g.members.includes(userEmailLower));
+                if (groupObj) myGroupName = groupObj.name;
+            }
+
+            if (myGroupName) {
+                whereClauses.push("c.assignedTo.group = @myGroup");
+                parameters.push({ name: "@myGroup", value: myGroupName });
+            } else {
+                // Jeśli użytkownik nie jest w żadnej grupie, a wybrał "Moja grupa", 
+                // to powinien widzieć pustą listę (lub ewentualnie nic nie filtrujemy? Lepiej pokazać 0, żeby nie wprowadzać w błąd).
+                whereClauses.push("1 = 0"); // Fałsz, zwróci 0 wyników
+            }
+        } 
+        else if (quickFilter === 'open') {
+            whereClauses.push("c.status != 'Zamknięte' AND c.status != 'Rozwiązane' AND c.status != 'Odrzucone'");
+        }
+        else if (quickFilter === 'closed') {
+            whereClauses.push("(c.status = 'Zamknięte' OR c.status = 'Rozwiązane' OR c.status = 'Odrzucone')");
+        }
+        // 'all' - nie dodajemy żadnego warunku
+    }
+
+    // --- WYSZUKIWANIE TEKSTOWE (działa łącznie z filtrem) ---
     if (searchText) {
         let condition = "";
-        
         switch (searchField) {
-            case 'id':
-                // ID często wpisujemy fragmentami, np. "2025"
-                condition = "CONTAINS(LOWER(c.id), @search)";
-                break;
-            case 'title':
-                condition = "CONTAINS(LOWER(c.title), @search)";
-                break;
-            case 'user':
-                // Szukamy w nazwie LUB w emailu zgłaszającego
-                condition = "(CONTAINS(LOWER(c.reportingUser.name), @search) OR CONTAINS(LOWER(c.reportingUser.email), @search))";
-                break;
-            case 'category':
-                condition = "CONTAINS(LOWER(c.category), @search)";
-                break;
-            case 'assigned':
-                // Sprawdzamy czy pole istnieje, a potem szukamy
-                condition = "(IS_DEFINED(c.assignedTo.person) AND CONTAINS(LOWER(c.assignedTo.person), @search))";
-                break;
-            case 'group':
-                condition = "CONTAINS(LOWER(c.assignedTo.group), @search)";
-                break;
-            case 'created':
-                // Data utworzenia (np. wpisanie "2025-12-12" znajdzie wszystkie z tego dnia)
-                // Używamy STARTSWITH na stringu daty ISO (np. 2025-12-12T15:00...)
-                condition = "STARTSWITH(c.dates.createdAt, @searchRaw)";
-                break;
-            case 'closed':
-                // Data zamknięcia
-                condition = "(IS_DEFINED(c.dates.closedAt) AND STARTSWITH(c.dates.closedAt, @searchRaw))";
-                break;
-            default:
-                // Domyślnie po ID
-                condition = "CONTAINS(LOWER(c.id), @search)";
+            case 'id': condition = "CONTAINS(LOWER(c.id), @search)"; break;
+            case 'title': condition = "CONTAINS(LOWER(c.title), @search)"; break;
+            case 'user': condition = "(CONTAINS(LOWER(c.reportingUser.name), @search) OR CONTAINS(LOWER(c.reportingUser.email), @search))"; break;
+            case 'category': condition = "CONTAINS(LOWER(c.category), @search)"; break;
+            case 'assigned': condition = "(IS_DEFINED(c.assignedTo.person) AND CONTAINS(LOWER(c.assignedTo.person), @search))"; break;
+            case 'group': condition = "CONTAINS(LOWER(c.assignedTo.group), @search)"; break;
+            case 'created': condition = "STARTSWITH(c.dates.createdAt, @searchRaw)"; break;
+            case 'closed': condition = "(IS_DEFINED(c.dates.closedAt) AND STARTSWITH(c.dates.closedAt, @searchRaw))"; break;
+            default: condition = "CONTAINS(LOWER(c.id), @search)";
         }
-
         whereClauses.push(condition);
         parameters.push({ name: "@search", value: searchText });
-        // Dla dat używamy oryginalnej wielkości liter (choć cyfry to bez znaczenia, to dobra praktyka)
         parameters.push({ name: "@searchRaw", value: req.query.search.trim() });
     }
 
@@ -95,11 +102,10 @@ module.exports = async function (context, req) {
 
     const querySpec = { query, parameters };
     const countParams = parameters.filter(p => p.name !== '@offset' && p.name !== '@limit');
-    const countQuerySpec = { query: countQuery, parameters: countParams }; 
     
     try {
         const [countResponse, itemsResponse] = await Promise.all([
-            container.items.query(countQuerySpec).fetchAll(),
+            container.items.query({ query: countQuery, parameters: countParams }).fetchAll(),
             container.items.query(querySpec).fetchAll()
         ]);
 
