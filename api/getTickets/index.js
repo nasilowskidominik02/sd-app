@@ -22,16 +22,14 @@ module.exports = async function (context, req) {
         
         // --- 2. PARAMETRY ---
         const page = parseInt(req.query.page) || 1;
-        // Search: zabezpieczamy pusty ciąg
         const rawSearch = req.query.search || '';
         const searchText = rawSearch.toLowerCase().trim();
         const searchField = req.query.field || 'id';
         const quickFilter = req.query.quickFilter || (isServiceDesk ? 'my_group' : 'all');
-        
         const pageSize = 10;
         const offset = (page - 1) * pageSize;
 
-        // --- 3. PRZYGOTOWANIE ZAPYTANIA ---
+        // --- 3. PRZYGOTOWANIE BAZY ZAPYTANIA ---
         let query = "SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c";
         let countQuery = "SELECT VALUE COUNT(1) FROM c";
         
@@ -52,41 +50,38 @@ module.exports = async function (context, req) {
             if (quickFilter === 'my_group') {
                 let myGroups = [];
                 
-                // Pobieranie grup użytkownika
+                // =========================================================
+                // NOWOŚĆ: Używamy POINT READ zamiast QUERY SQL
+                // To jest metoda "Bibliotekarza" - 100% skuteczności
+                // =========================================================
                 try {
-                    // Pobieramy ustawienia (SQL bez parametrów)
-                    const { resources: settings } = await container.items.query(
-                        "SELECT * FROM c WHERE c.id = 'global_settings'",
-                        { enableCrossPartitionQuery: true }
-                    ).fetchAll();
+                    // Odwołujemy się wprost do ID i PartitionKey ("config")
+                    // To omija błędy z partycjami i SQL.
+                    const { resource: config } = await container
+                        .item("global_settings", "config")
+                        .read();
                     
-                    if (settings && settings.length > 0) {
-                        const config = settings[0];
-                        if (config.groups && Array.isArray(config.groups)) {
-                            const userEmailLower = userEmail.toLowerCase();
-                            
-                            // Znajdujemy nazwy grup, w których jest user
-                            myGroups = config.groups
-                                .filter(g => g.members && Array.isArray(g.members) && g.members.includes(userEmailLower))
-                                .map(g => g.name);
-                        }
+                    if (config && config.groups && Array.isArray(config.groups)) {
+                        const userEmailLower = userEmail.toLowerCase();
+                        
+                        myGroups = config.groups
+                            .filter(g => g.members && Array.isArray(g.members) && g.members.includes(userEmailLower))
+                            .map(g => g.name);
                     }
                 } catch (err) {
-                    context.log.error("Groups fetch error:", err.message);
+                    context.log.error("Błąd pobierania ustawień (Point Read):", err.message);
                 }
+                // =========================================================
 
                 if (myGroups.length > 0) {
-                    // --- ZMIANA KLUCZOWA (Bypass błędu "Invalid Input") ---
-                    // Zamiast parametrów @g0, @g1, wpisujemy nazwy grup wprost do stringa SQL.
-                    // Używamy replace, aby zabezpieczyć ewentualne apostrofy w nazwie grupy.
-                    
+                    // Wpisujemy nazwy grup "na sztywno" do SQL, żeby uniknąć błędu parametrów
+                    // Zabezpieczamy apostrofy (np. grupa "L'Oreal" -> "L''Oreal")
                     const safeGroups = myGroups.map(g => `'${g.replace(/'/g, "''")}'`).join(", ");
                     
-                    // Wynik np.: c.assignedTo.group IN ('Pierwsza linia wsparcia', 'Administratorzy')
                     whereClauses.push(`c.assignedTo.group IN (${safeGroups})`);
 
                 } else {
-                    // User nie jest w żadnej grupie -> 0 wyników
+                    // Nie znaleziono grup dla tego serwisanta -> 0 wyników
                     whereClauses.push("1 = 0"); 
                 }
             } 
@@ -101,7 +96,6 @@ module.exports = async function (context, req) {
         // --- 5. WYSZUKIWANIE TEKSTOWE ---
         if (searchText) {
             let condition = "";
-            // Generujemy warunki wyszukiwania
             switch (searchField) {
                 case 'id': condition = "CONTAINS(LOWER(c.id), @search)"; break;
                 case 'title': condition = "CONTAINS(LOWER(c.title), @search)"; break;
@@ -116,7 +110,6 @@ module.exports = async function (context, req) {
             whereClauses.push(condition);
             parameters.push({ name: "@search", value: searchText });
             
-            // Parametr @searchRaw dodajemy tylko jeśli jest potrzebny (daty), żeby uniknąć błędu nieużywanego parametru
             if (searchField === 'created' || searchField === 'closed') {
                 parameters.push({ name: "@searchRaw", value: rawSearch.trim() });
             }
@@ -129,10 +122,9 @@ module.exports = async function (context, req) {
             countQuery += whereString;
         }
         
-        // --- PAGINACJA W STRINGU (Bez parametrów) ---
+        // Paginacja wpisana wprost do stringa (omija błąd "Invalid input values")
         query += ` ORDER BY c.dates.createdAt DESC OFFSET ${offset} LIMIT ${pageSize}`;
 
-        // Wykonanie zapytań
         const [countResponse, itemsResponse] = await Promise.all([
             container.items.query({ query: countQuery, parameters: parameters }).fetchAll(),
             container.items.query({ query: query, parameters: parameters }).fetchAll()
