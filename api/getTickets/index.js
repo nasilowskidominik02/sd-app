@@ -5,7 +5,7 @@ const container = client.database("ServiceDeskDB").container("Tickets");
 
 module.exports = async function (context, req) {
     try {
-        // --- 1. AUTORYZACJA I WALIDACJA ---
+        // --- 1. AUTORYZACJA ---
         const header = req.headers['x-ms-client-principal'];
         if (!header) return { status: 401, body: "User is not authenticated." };
         
@@ -20,7 +20,7 @@ module.exports = async function (context, req) {
         const isServiceDesk = clientPrincipal.userRoles.includes('sd');
         const userEmail = clientPrincipal.userDetails;
         
-        // --- 2. POBIERANIE PARAMETRÓW ---
+        // --- 2. PARAMETRY ---
         const page = parseInt(req.query.page) || 1;
         const rawSearch = req.query.search || '';
         const searchText = rawSearch.toLowerCase().trim();
@@ -30,7 +30,7 @@ module.exports = async function (context, req) {
         const pageSize = 10;
         const offset = (page - 1) * pageSize;
 
-        // --- 3. BUDOWANIE ZAPYTANIA ---
+        // --- 3. BAZOWE ZAPYTANIE ---
         let query = "SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c";
         let countQuery = "SELECT VALUE COUNT(1) FROM c";
         let whereClauses = [];
@@ -40,7 +40,7 @@ module.exports = async function (context, req) {
         whereClauses.push("c.id != 'global_settings'");
         whereClauses.push("(NOT IS_DEFINED(c.type) OR c.type != 'notification')");
 
-        // Zwykły user widzi tylko swoje
+        // User widzi tylko swoje
         if (!isServiceDesk) {
             whereClauses.push("c.reportingUser.email = @userEmail");
             parameters.push({ name: "@userEmail", value: userEmail });
@@ -49,10 +49,10 @@ module.exports = async function (context, req) {
         // --- 4. LOGIKA FILTRÓW DLA SD ---
         if (isServiceDesk) {
             if (quickFilter === 'my_group') {
-                let myGroups = []; // Tablica na nazwy grup użytkownika
+                let myGroups = [];
                 
                 try {
-                    // Pobieramy ustawienia globalne
+                    // Pobieramy ustawienia
                     const settingsQuerySpec = { 
                         query: "SELECT * FROM c WHERE c.id = 'global_settings'" 
                     };
@@ -63,8 +63,7 @@ module.exports = async function (context, req) {
                         if (config.groups && Array.isArray(config.groups)) {
                             const userEmailLower = userEmail.toLowerCase();
                             
-                            // ZMIANA: Używamy .filter() zamiast .find(), żeby znaleźć WSZYSTKIE grupy użytkownika
-                            // Analiza Twojego JSON-a pokazała, że Dominik jest w 2 grupach.
+                            // Znajdujemy wszystkie grupy, do których należy user
                             myGroups = config.groups
                                 .filter(g => g.members && Array.isArray(g.members) && g.members.includes(userEmailLower))
                                 .map(g => g.name);
@@ -75,12 +74,22 @@ module.exports = async function (context, req) {
                 }
 
                 if (myGroups.length > 0) {
-                    // SQL: Sprawdź czy grupa zgłoszenia znajduje się w moich grupach
-                    // ARRAY_CONTAINS(tablica_grup, wartość_z_bazy)
-                    whereClauses.push("ARRAY_CONTAINS(@myGroups, c.assignedTo.group)");
-                    parameters.push({ name: "@myGroups", value: myGroups });
+                    // --- POPRAWKA: UŻYCIE KLAUZULI IN ZAMIAST ARRAY_CONTAINS ---
+                    // Generujemy dynamicznie parametry: @g0, @g1, @g2...
+                    // SQL: c.assignedTo.group IN (@g0, @g1)
+                    
+                    const paramNames = myGroups.map((_, i) => `@g${i}`);
+                    const inClause = `c.assignedTo.group IN (${paramNames.join(', ')})`;
+                    
+                    whereClauses.push(inClause);
+
+                    // Dodajemy wartości parametrów
+                    myGroups.forEach((groupName, i) => {
+                        parameters.push({ name: `@g${i}`, value: groupName });
+                    });
+
                 } else {
-                    // Jeśli nie należę do żadnej grupy -> brak wyników
+                    // Nie należę do żadnej grupy -> brak wyników
                     whereClauses.push("1 = 0");
                 }
             } 
@@ -111,7 +120,7 @@ module.exports = async function (context, req) {
             parameters.push({ name: "@searchRaw", value: rawSearch.trim() });
         }
 
-        // --- 6. SKŁADANIE ZAPYTANIA ---
+        // --- 6. WYKONANIE ---
         if (whereClauses.length > 0) {
             const whereString = " WHERE " + whereClauses.join(" AND ");
             query += whereString;
@@ -122,7 +131,6 @@ module.exports = async function (context, req) {
         parameters.push({ name: "@offset", value: offset });
         parameters.push({ name: "@limit", value: pageSize });
 
-        // --- 7. WYKONANIE ---
         const querySpec = { query, parameters };
         const countParams = parameters.filter(p => p.name !== '@offset' && p.name !== '@limit');
         
@@ -141,11 +149,11 @@ module.exports = async function (context, req) {
         };
 
     } catch (error) {
-        // Logujemy błąd, ale zwracamy czysty JSON z błędem 500, żeby frontend nie zwariował
         context.log.error("CRITICAL ERROR in getTickets:", error);
+        // Zwracamy szczegóły błędu (tylko w dev, na produkcji można ukryć)
         context.res = { 
             status: 500, 
-            body: { message: "Internal Server Error", details: error.message } 
+            body: { message: "Internal Server Error", errorDetails: error.message } 
         };
     }
 };
