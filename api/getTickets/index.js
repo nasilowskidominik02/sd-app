@@ -30,17 +30,18 @@ module.exports = async function (context, req) {
         const pageSize = 10;
         const offset = (page - 1) * pageSize;
 
-        // --- 3. PRZYGOTOWANIE ZAPYTANIA GŁÓWNEGO ---
+        // --- 3. BAZA ZAPYTANIA ---
         let query = "SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c";
         let countQuery = "SELECT VALUE COUNT(1) FROM c";
         
         let whereClauses = [];
         let parameters = [];
 
-        // Filtry stałe
+        // Filtry obowiązkowe
         whereClauses.push("c.id != 'global_settings'");
         whereClauses.push("(NOT IS_DEFINED(c.type) OR c.type != 'notification')");
 
+        // Zwykły user: widzi tylko swoje
         if (!isServiceDesk) {
             whereClauses.push("c.reportingUser.email = @userEmail");
             parameters.push({ name: "@userEmail", value: userEmail });
@@ -51,16 +52,16 @@ module.exports = async function (context, req) {
             if (quickFilter === 'my_group') {
                 let myGroups = [];
                 
+                // BLOK POBIERANIA USTAWIEŃ - ZABEZPIECZONY
                 try {
-                    // FIX: Dodajemy warunek c._partitionKey = 'config', żeby wskazać konkretną partycję.
-                    // To najskuteczniejsza metoda na błędy typu "Cross Partition Query".
+                    // CZYSTY SQL: Szukamy tylko po ID. Baza sama znajdzie partycję.
                     const settingsQuerySpec = { 
-                        query: "SELECT * FROM c WHERE c.id = 'global_settings' AND c._partitionKey = 'config'"
+                        query: "SELECT * FROM c WHERE c.id = 'global_settings'" 
                     };
                     
                     const { resources: settings } = await container.items.query(
                         settingsQuerySpec,
-                        { enableCrossPartitionQuery: true } // Zostawiamy na wszelki wypadek
+                        { enableCrossPartitionQuery: true } // Pozwól szukać wszędzie
                     ).fetchAll();
                     
                     if (settings && settings.length > 0) {
@@ -68,19 +69,20 @@ module.exports = async function (context, req) {
                         if (config.groups && Array.isArray(config.groups)) {
                             const userEmailLower = userEmail.toLowerCase();
                             
-                            // Bezpieczne filtrowanie grup
+                            // Wyciągamy nazwy grup
                             myGroups = config.groups
                                 .filter(g => g.members && Array.isArray(g.members) && g.members.includes(userEmailLower))
                                 .map(g => g.name);
                         }
                     }
                 } catch (err) {
-                    // Logujemy błąd, ale nie przerywamy działania (zwróci 0 wyników)
-                    context.log.error("Warning: Błąd pobierania ustawień grup:", err.message);
+                    // Jeśli tu wystąpi błąd, to go ignorujemy i po prostu nie filtrujemy grup
+                    // Dzięki temu nie ma błędu 500
+                    context.log.error("Warning: Settings fetch failed", err.message);
                 }
 
                 if (myGroups.length > 0) {
-                    // Generujemy zapytanie z OR: (c.assignedTo.group = 'A' OR c.assignedTo.group = 'B')
+                    // BUDOWANIE ZAPYTANIA OR: (group = 'A' OR group = 'B')
                     const orConditions = myGroups.map((_, index) => `c.assignedTo.group = @g${index}`);
                     const combinedOr = `(${orConditions.join(' OR ')})`;
                     
@@ -91,10 +93,10 @@ module.exports = async function (context, req) {
                     });
 
                 } else {
-                    // Jeśli SD nie jest w żadnej grupie lub wystąpił błąd -> brak wyników
+                    // Jesteś SD, wybrałeś "Moja grupa", ale nie znaleźliśmy Twojej grupy -> 0 wyników
                     whereClauses.push("1 = 0");
                 }
-            }
+            } 
             else if (quickFilter === 'open') {
                 whereClauses.push("c.status != 'Zamknięte' AND c.status != 'Rozwiązane' AND c.status != 'Odrzucone'");
             }
@@ -151,10 +153,11 @@ module.exports = async function (context, req) {
         };
 
     } catch (error) {
-        context.log.error("CRITICAL ERROR in getTickets:", error);
+        // Tu łapiemy każdy inny błąd, żeby frontend dostał JSON a nie HTML z błędem
+        context.log.error("CRITICAL ERROR:", error);
         context.res = { 
             status: 500, 
-            body: { message: "Internal Server Error", error: error.message } 
+            body: { message: "Server Error", details: error.message } 
         };
     }
 };
