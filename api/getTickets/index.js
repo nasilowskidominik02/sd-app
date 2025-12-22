@@ -29,9 +29,8 @@ module.exports = async function (context, req) {
         const pageSize = 10;
         const offset = (page - 1) * pageSize;
 
-        // --- 3. PRZYGOTOWANIE ZAPYTANIA ---
+        // --- 3. PRZYGOTOWANIE BAZY ZAPYTANIA ---
         let countQuery = "SELECT VALUE COUNT(1) FROM c";
-        // Zbieramy klauzule WHERE
         let whereClauses = [];
         let parameters = [];
 
@@ -49,7 +48,7 @@ module.exports = async function (context, req) {
             if (quickFilter === 'my_group') {
                 let myGroups = [];
                 
-                // POBIERANIE USTAWIEŃ (SQL - Cross Partition Safe)
+                // Pobieranie ustawień - wciąż używamy SQL z CrossPartition, bo to zadziałało w logach
                 try {
                     const { resources: settings } = await container.items.query(
                         "SELECT * FROM c WHERE c.id = 'global_settings'",
@@ -61,37 +60,32 @@ module.exports = async function (context, req) {
                         if (config.groups && Array.isArray(config.groups)) {
                             const userEmailLower = userEmail.toLowerCase().trim();
                             
-                            // Znajdujemy grupy usera (ignorując wielkość liter maila)
+                            // Znajdź grupy usera
                             myGroups = config.groups
                                 .filter(g => {
                                     if (!g.members || !Array.isArray(g.members)) return false;
                                     return g.members.some(m => m.toLowerCase().trim() === userEmailLower);
                                 })
-                                .map(g => g.name); // Pobieramy oryginalne nazwy grup
+                                .map(g => g.name);
                         }
                     }
                 } catch (err) {
-                    context.log.error("Błąd SQL przy pobieraniu ustawień:", err.message);
+                    context.log.error("Błąd pobierania ustawień:", err.message);
                 }
 
                 if (myGroups.length > 0) {
-                    // --- OSTATECZNE ROZWIĄZANIE: StringEquals ---
-                    // Generujemy serię warunków OR z funkcją StringEquals(pole, wartosc, true)
-                    // true = ignoruj wielkość liter.
-                    
+                    // Budujemy warunki StringEquals
                     const groupConditions = myGroups.map(groupName => {
-                        // Zabezpieczamy apostrofy w nazwie grupy
                         const safeName = groupName.replace(/'/g, "''");
-                        // Tworzymy warunek: StringEquals(c.assignedTo.group, 'NazwaGrupy', true)
                         return `StringEquals(c.assignedTo.group, '${safeName}', true)`;
                     });
                     
-                    // Łączymy je operatorem OR i otaczamy nawiasem
-                    // Wynik: (StringEquals(..., 'A', true) OR StringEquals(..., 'B', true))
-                    whereClauses.push(`(${groupConditions.join(' OR ')})`);
+                    // DODATKOWE ZABEZPIECZENIE: Sprawdzamy czy assignedTo w ogóle istnieje
+                    // Żeby nie wywołać błędu na starych zgłoszeniach bez przypisania
+                    const groupsCheck = `(${groupConditions.join(' OR ')})`;
+                    whereClauses.push(`(IS_DEFINED(c.assignedTo) AND IS_DEFINED(c.assignedTo.group) AND ${groupsCheck})`);
 
                 } else {
-                    // Brak grup -> brak wyników
                     whereClauses.push("1 = 0"); 
                 }
             } 
@@ -131,15 +125,19 @@ module.exports = async function (context, req) {
             whereString = " WHERE " + whereClauses.join(" AND ");
         }
 
-        // Zapytanie o licznik (Count)
         const finalCountQuery = countQuery + whereString;
-
-        // Zapytanie o dane (Select) z paginacją LITERAMI (by uniknąć błędu parametrów)
         const finalQuery = `SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c ${whereString} ORDER BY c.dates.createdAt DESC OFFSET ${offset} LIMIT ${pageSize}`;
 
+        // --- KLUCZOWA POPRAWKA ---
+        // Dodajemy { enableCrossPartitionQuery: true } do GŁÓWNYCH zapytań.
+        // To jest wymagane, gdy używamy ORDER BY + OFFSET w zapytaniu, które nie ma w WHERE klucza partycji.
+        // Bez tego baza zwraca "Invalid input values" (błąd 500).
+        
+        const queryOptions = { enableCrossPartitionQuery: true };
+
         const [countResponse, itemsResponse] = await Promise.all([
-            container.items.query({ query: finalCountQuery, parameters: parameters }).fetchAll(),
-            container.items.query({ query: finalQuery, parameters: parameters }).fetchAll()
+            container.items.query({ query: finalCountQuery, parameters: parameters }, queryOptions).fetchAll(),
+            container.items.query({ query: finalQuery, parameters: parameters }, queryOptions).fetchAll()
         ]);
 
         context.res = {
