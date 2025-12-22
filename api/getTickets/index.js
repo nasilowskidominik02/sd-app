@@ -30,17 +30,18 @@ module.exports = async function (context, req) {
         const pageSize = 10;
         const offset = (page - 1) * pageSize;
 
-        // --- 3. BAZOWE ZAPYTANIE ---
+        // --- 3. BAZA ZAPYTANIA ---
         let query = "SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c";
         let countQuery = "SELECT VALUE COUNT(1) FROM c";
+        
         let whereClauses = [];
         let parameters = [];
 
-        // Filtry stałe
+        // Filtry obowiązkowe
         whereClauses.push("c.id != 'global_settings'");
         whereClauses.push("(NOT IS_DEFINED(c.type) OR c.type != 'notification')");
 
-        // User widzi tylko swoje
+        // Zwykły user: widzi tylko swoje
         if (!isServiceDesk) {
             whereClauses.push("c.reportingUser.email = @userEmail");
             parameters.push({ name: "@userEmail", value: userEmail });
@@ -51,11 +52,9 @@ module.exports = async function (context, req) {
             if (quickFilter === 'my_group') {
                 let myGroups = [];
                 
+                // Pobieranie grup z bazy (bezpieczne)
                 try {
-                    // Pobieramy ustawienia
-                    const settingsQuerySpec = { 
-                        query: "SELECT * FROM c WHERE c.id = 'global_settings'" 
-                    };
+                    const settingsQuerySpec = { query: "SELECT * FROM c WHERE c.id = 'global_settings'" };
                     const { resources: settings } = await container.items.query(settingsQuerySpec).fetchAll();
                     
                     if (settings && settings.length > 0) {
@@ -63,33 +62,32 @@ module.exports = async function (context, req) {
                         if (config.groups && Array.isArray(config.groups)) {
                             const userEmailLower = userEmail.toLowerCase();
                             
-                            // Znajdujemy wszystkie grupy, do których należy user
+                            // Znajdź nazwy grup użytkownika
                             myGroups = config.groups
                                 .filter(g => g.members && Array.isArray(g.members) && g.members.includes(userEmailLower))
                                 .map(g => g.name);
                         }
                     }
                 } catch (err) {
-                    context.log.error("Warning: Błąd pobierania grup:", err.message);
+                    context.log.error("Warning: Błąd pobierania ustawień grup:", err.message);
                 }
 
                 if (myGroups.length > 0) {
-                    // --- POPRAWKA: UŻYCIE KLAUZULI IN ZAMIAST ARRAY_CONTAINS ---
-                    // Generujemy dynamicznie parametry: @g0, @g1, @g2...
-                    // SQL: c.assignedTo.group IN (@g0, @g1)
+                    // --- METODA PANCERNA (OR) ---
+                    // Generujemy ciąg: (c.assignedTo.group = @g0 OR c.assignedTo.group = @g1 ...)
                     
-                    const paramNames = myGroups.map((_, i) => `@g${i}`);
-                    const inClause = `c.assignedTo.group IN (${paramNames.join(', ')})`;
+                    const orConditions = myGroups.map((_, index) => `c.assignedTo.group = @g${index}`);
+                    const combinedOr = `(${orConditions.join(' OR ')})`;
                     
-                    whereClauses.push(inClause);
+                    whereClauses.push(combinedOr);
 
-                    // Dodajemy wartości parametrów
-                    myGroups.forEach((groupName, i) => {
-                        parameters.push({ name: `@g${i}`, value: groupName });
+                    // Dodajemy parametry @g0, @g1 itd.
+                    myGroups.forEach((groupName, index) => {
+                        parameters.push({ name: `@g${index}`, value: groupName });
                     });
 
                 } else {
-                    // Nie należę do żadnej grupy -> brak wyników
+                    // SD bez grupy -> brak wyników
                     whereClauses.push("1 = 0");
                 }
             } 
@@ -120,7 +118,7 @@ module.exports = async function (context, req) {
             parameters.push({ name: "@searchRaw", value: rawSearch.trim() });
         }
 
-        // --- 6. WYKONANIE ---
+        // --- 6. SKŁADANIE I WYKONANIE ---
         if (whereClauses.length > 0) {
             const whereString = " WHERE " + whereClauses.join(" AND ");
             query += whereString;
@@ -150,10 +148,13 @@ module.exports = async function (context, req) {
 
     } catch (error) {
         context.log.error("CRITICAL ERROR in getTickets:", error);
-        // Zwracamy szczegóły błędu (tylko w dev, na produkcji można ukryć)
         context.res = { 
             status: 500, 
-            body: { message: "Internal Server Error", errorDetails: error.message } 
+            body: { 
+                message: "Internal Server Error", 
+                details: error.message,
+                stack: error.stack 
+            } 
         };
     }
 };
