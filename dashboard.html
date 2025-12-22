@@ -722,9 +722,20 @@
                 
                 const closingFileInput = document.getElementById('closing-attachment-input');
                 const closingFileName = document.getElementById('closing-file-name');
+                
                 closingFileInput.addEventListener('change', () => {
                     if (closingFileInput.files.length > 0) {
-                        closingFileName.textContent = `Wybrano plik: ${closingFileInput.files[0].name}`;
+                        const file = closingFileInput.files[0];
+                        const maxSize = 50 * 1024 * 1024; // 50 MB
+
+                        if (file.size > maxSize) {
+                            alert("Plik jest za duży! Maksymalny rozmiar to 50MB.");
+                            closingFileInput.value = "";
+                            closingFileName.textContent = "";
+                            return;
+                        }
+
+                        closingFileName.textContent = `Wybrano plik: ${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB)`;
                     } else {
                         closingFileName.textContent = '';
                     }
