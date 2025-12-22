@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Service Desk</title>
+    <title>Panel Główny - Service Desk App</title>
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,23 +13,26 @@
 
     <div class="app-layout">
         <header class="app-header">
-            <div class="header-title">Service Desk</div>
+            <div class="header-title">
+                Aplikacja do zgłaszania problemów do Service Desk
+            </div>
             <div class="header-user-info">
-                <div class="notifications-wrapper" id="notifications-wrapper">
-                    <button class="btn-icon" id="bell-btn" onclick="toggleNotifications()">
-                        🔔 <span id="notification-badge" class="badge hidden">0</span>
+                <div class="notification-wrapper" id="notification-wrapper">
+                    <button class="notification-btn" id="notification-btn" onclick="toggleNotifications()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                        </svg>
+                        <span id="notification-badge" class="notification-badge hidden">0</span>
                     </button>
-                    <div class="notifications-dropdown hidden" id="notifications-dropdown">
-                        <div class="notifications-header">
-                            <span>Powiadomienia</span>
-                            <button onclick="markAllRead()" style="font-size: 11px; background:none; border:none; color:var(--primary-blue); cursor:pointer;">Oznacz wszystkie</button>
-                        </div>
-                        <div id="notifications-list" class="notifications-list">
-                            <div style="padding:10px; text-align:center; color:#999;">Brak nowych powiadomień</div>
+                    
+                    <div id="notification-dropdown" class="notification-dropdown">
+                        <div class="notification-header">Powiadomienia</div>
+                        <div id="notification-list" class="notification-list">
+                            <div class="notification-empty">Brak nowych powiadomień</div>
                         </div>
                     </div>
                 </div>
-
                 <span id="userName">Ładowanie...</span>
                 <a href="/.auth/logout" class="btn-logout">Wyloguj</a>
             </div>
@@ -40,8 +43,8 @@
                 <nav class="sidebar-nav">
                     <a href="dashboard.html" class="nav-item active">Zgłoszenia</a>
                     <a href="new-ticket.html" class="nav-item">Nowe zgłoszenie</a>
-                    <a href="admin.html" class="nav-item hidden" id="admin-link">Panel Administracyjny</a>
-                    <a href="reports.html" class="nav-item hidden" id="reports-link">Raporty</a>
+                    <a href="admin.html" id="admin-link" class="nav-item hidden">Panel Administracyjny</a> 
+                    <a href="reports.html" id="reports-link" class="nav-item hidden">Raporty</a>
                 </nav>
             </aside>
             
@@ -50,7 +53,7 @@
                     <h1 id="dashboard-title">Twoje ostatnie zgłoszenia</h1>
                     
                     <div class="search-container">
-                        <select id="quick-filter" class="search-select" style="font-weight: 500; border-color: var(--primary-blue); margin-right: 8px;">
+                        <select id="quick-filter" class="search-select" style="font-weight: 500; border-color: var(--primary-blue);">
                             <option value="my_group">Moja Grupa (Domyślne)</option>
                             <option value="all">Wszystkie zgłoszenia</option>
                             <option value="open">Otwarte zgłoszenia</option>
@@ -73,261 +76,253 @@
                         <button id="search-btn" class="btn-primary">Szukaj</button>
                     </div>
                 </div>
-
+                
                 <div class="table-container">
-                    <table class="tickets-table">
+                    <table class="ticket-table">
                         <thead>
                             <tr>
-                                th>ID</th>
+                                <th>ID</th>
                                 <th>Status</th>
                                 <th>Tytuł</th>
-                                <th>Zgłaszający</th>
+                                <th>Użytkownik</th>
                                 <th>Kategoria</th>
-                                <th>Przypisany</th>
+                                <th>Odpowiedzialny</th>
                                 <th>Grupa</th>
                                 <th>Utworzono</th>
-                                <th>Termin (SLA)</th>
+                                <th>SLA</th>
                                 <th>Zamknięto</th>
                             </tr>
                         </thead>
-                        <tbody id="tickets-tbody">
-                            </tbody>
+                        <tbody id="tickets-tbody"></tbody>
                     </table>
                 </div>
-                
-                <div id="pagination" class="pagination">
-                    </div>
+                <div id="pagination-container" class="pagination"></div>
             </main>
         </div>
+
+        <footer class="app-footer">
+            <p>Dominik Nasiłowski 2026 (R)</p>
+        </footer>
     </div>
 
-    <div id="ticket-modal" class="modal hidden">
+    <div id="ticket-modal" class="modal-overlay hidden">
         <div class="modal-content">
-            <span class="close-modal" onclick="closeTicketModal()">&times;</span>
-            <h2 id="modal-title">Szczegóły zgłoszenia</h2>
-            
-            <div class="modal-grid">
-                <div class="modal-left">
-                    <div class="info-group">
-                        <label>Zgłaszający:</label>
-                        <span id="modal-user"></span>
-                    </div>
-                    <div class="info-group">
-                        <label>Status:</label>
-                        <span id="modal-status"></span>
-                    </div>
-                     <div class="info-group">
-                        <label>Kategoria:</label>
-                        <select id="modal-category-select" disabled></select>
-                        <button id="btn-change-category" class="btn-sm hidden" onclick="enableCategoryEdit()">Zmień</button>
-                        <button id="btn-save-category" class="btn-sm btn-primary hidden" onclick="saveCategoryChange()">Zapisz</button>
-                    </div>
+            <header class="modal-header">
+                <h2 id="modal-title">Szczegóły zgłoszenia</h2>
+                <div class="modal-header-actions">
+                    <button id="modal-save-btn" class="btn btn-primary hidden">Zapisz zmiany</button>
+                    <button id="modal-close-btn" class="btn-close">X</button>
                 </div>
-                <div class="modal-right">
-                    <div class="info-group">
-                        <label>Przypisany:</label>
-                        <span id="modal-assigned"></span>
-                        <button id="btn-assign-me" class="btn-sm hidden" onclick="assignToMe()">Przypisz do mnie</button>
-                    </div>
-                    <div class="info-group">
-                        <label>Grupa:</label>
-                        <span id="modal-group"></span>
-                    </div>
-                    <div class="info-group">
-                        <label>Data utworzenia:</label>
-                        <span id="modal-date"></span>
-                    </div>
-                </div>
-            </div>
-
-            <hr>
-            
-            <div class="ticket-description">
-                <label>Treść zgłoszenia:</label>
-                <p id="modal-description"></p>
-                <div id="modal-attachment-link" style="margin-top:10px;"></div>
-            </div>
-
-            <hr>
-
-            <div class="comments-section">
-                <h3>Komentarze</h3>
-                <div id="comments-list" class="comments-list"></div>
-                
-                <div class="new-comment-area">
-                    <textarea id="new-comment-text" placeholder="Dodaj komentarz..."></textarea>
-                    <button class="btn-primary" onclick="addComment()">Dodaj komentarz</button>
-                </div>
-            </div>
-
-            <div class="modal-actions">
-                <button class="btn-danger" id="btn-close-ticket" onclick="openCloseTicketModal()">Zamknij zgłoszenie</button>
-                <button class="btn-secondary" onclick="closeTicketModal()">Anuluj</button>
-            </div>
+            </header>
+            <div id="modal-body" class="modal-body"></div>
+            <p id="modal-status" class="modal-status hidden"></p>
         </div>
     </div>
 
-    <div id="closing-modal" class="modal hidden" style="z-index: 2000;">
-        <div class="modal-content" style="max-width: 500px;">
-            <h3>Zamknij zgłoszenie</h3>
-            <p>Wybierz status końcowy i dodaj podsumowanie.</p>
-            
-            <div class="form-group">
-                <label>Status końcowy:</label>
-                <select id="closing-status" class="form-control">
-                    <option value="Rozwiązane">Rozwiązane (Sukces)</option>
-                    <option value="Odrzucone">Odrzucone (Bezzasadne)</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label>Komentarz zamykający (wymagany):</label>
-                <textarea id="closing-comment" class="form-control" rows="3" placeholder="Opisz rozwiązanie problemu..."></textarea>
-            </div>
-            
-            <div class="form-group">
-                <label>Załącznik (opcjonalnie):</label>
-                <div class="file-upload-wrapper">
-                    <button class="btn-secondary" onclick="document.getElementById('closing-attachment-input').click()">Wybierz plik</button>
-                    <input type="file" id="closing-attachment-input" hidden>
-                    <span id="closing-file-name" style="margin-left: 10px; font-size: 0.9em; color: #666;"></span>
+    <div id="closing-modal" class="modal-overlay hidden">
+        <div class="modal-content" style="max-width: 600px; height: auto;">
+            <header class="modal-header">
+                <h2>Zamknij zgłoszenie</h2>
+                <button id="closing-modal-close-btn" class="btn-close">X</button>
+            </header>
+            <form id="closing-form" class="modal-body" style="display: block; padding: 24px;">
+                <div class="form-group">
+                    <label>Status zamknięcia</label>
+                    <div class="radio-group">
+                        <label><input type="radio" name="closingStatus" value="Rozwiązane" checked> Rozwiązane</label>
+                        <label><input type="radio" name="closingStatus" value="Odrzucone"> Odrzucone</label>
+                    </div>
                 </div>
-            </div>
-
-            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
-                <button class="btn-secondary" onclick="document.getElementById('closing-modal').classList.add('hidden')">Anuluj</button>
-                <button class="btn-primary" onclick="confirmCloseTicket()">Potwierdź zamknięcie</button>
-            </div>
+                <div class="form-group">
+                    <label for="closing-comment-input">Komentarz zamknięcia (wymagany)</label>
+                    <textarea id="closing-comment-input" class="form-control" rows="5" required></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="closing-attachment-input">Załącznik (opcjonalnie)</label>
+                    <div class="file-input-wrapper">
+                        <label for="closing-attachment-input" class="file-input-label">Wybierz plik</label>
+                        <input type="file" id="closing-attachment-input" class="file-input">
+                    </div>
+                    <div id="closing-file-name"></div>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Potwierdź zamknięcie</button>
+                    <p id="closing-modal-status" class="hidden"></p>
+                </div>
+            </form>
         </div>
     </div>
-
+    
     <script>
-        let currentPage = 1;
         let currentUserDetails = null;
-        let currentTicketId = null;
-        let categoriesList = [];
-
-        // Interwały odświeżania
+        let currentTicketData = null;
+        let pendingChanges = {};
+        let currentPage = 1;
         let refreshInterval;
+        let cachedCategories = []; 
+        
         let notificationsInterval;
+        let currentNotifications = [];
 
-        async function init() {
+        function escapeHTML(str) {
+            if (str === null || str === undefined) return '';
+            return str.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+        }
+
+        function formatDateTwoLines(dateStr) {
+            if (!dateStr) return '---';
+            const dateObj = new Date(dateStr);
+            const datePart = dateObj.toLocaleDateString('pl-PL');
+            const timePart = dateObj.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+            return `${datePart}<br><span style="color:var(--text-light); font-size: 0.9em">${timePart}</span>`;
+        }
+
+        async function fetchNotifications() {
             try {
-                const response = await fetch('/.auth/me');
-                const payload = await response.json();
-                const { clientPrincipal } = payload;
-
-                if (clientPrincipal) {
-                    currentUserDetails = clientPrincipal;
-                    document.getElementById('userName').textContent = clientPrincipal.userDetails;
-                    initializeDashboard();
+                const timestamp = new Date().getTime();
+                const response = await fetch(`/api/getNotifications?t=${timestamp}`);
+                
+                if (response.ok) {
+                    currentNotifications = await response.json();
+                    updateNotificationUI();
                 } else {
-                    window.location.href = 'index.html'; 
+                    console.error("Błąd sieci przy pobieraniu powiadomień:", response.status);
                 }
             } catch (error) {
-                console.error('Błąd autoryzacji:', error);
-                window.location.href = 'index.html';
+                console.error("Błąd pobierania powiadomień:", error);
             }
         }
 
-        async function initializeDashboard() {
-            const isServiceDesk = currentUserDetails.userRoles.includes('sd');
-
-            if (isServiceDesk) {
-                document.getElementById('dashboard-title').textContent = "Wszystkie ostatnie zgłoszenia";
-                document.getElementById('admin-link').classList.remove('hidden');
-                document.getElementById('reports-link').classList.remove('hidden');
-                
-                // Pokaż przyciski akcji w modalu
-                document.getElementById('btn-assign-me').classList.remove('hidden');
-                document.getElementById('btn-close-ticket').classList.remove('hidden');
-                document.getElementById('btn-change-category').classList.remove('hidden');
+        function updateNotificationUI() {
+            const badge = document.getElementById('notification-badge');
+            const list = document.getElementById('notification-list');
+            
+            if (currentNotifications.length > 0) {
+                badge.textContent = currentNotifications.length;
+                badge.classList.remove('hidden');
             } else {
-                // Ukryj szybki filtr dla zwykłego usera
-                const quickFilter = document.getElementById('quick-filter');
-                if(quickFilter) quickFilter.classList.add('hidden');
+                badge.classList.add('hidden');
             }
 
-            await fetchCategories();
-            loadTickets(); // Ładuje zgłoszenia przy starcie
+            list.innerHTML = '';
+            if (currentNotifications.length === 0) {
+                list.innerHTML = '<div class="notification-empty">Brak nowych powiadomień</div>';
+                return;
+            }
+
+            currentNotifications.forEach(notif => {
+                const item = document.createElement('div');
+                item.className = 'notification-item unread';
+                item.onclick = () => handleNotificationClick(notif);
+                
+                const time = new Date(notif.createdAt).toLocaleString('pl-PL', { 
+                    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+                });
+
+                item.innerHTML = `
+                    <div>${escapeHTML(notif.message)}</div>
+                    <div class="notification-time">${time}</div>
+                `;
+                list.appendChild(item);
+            });
+        }
+
+        function toggleNotifications() {
+            const dropdown = document.getElementById('notification-dropdown');
+            dropdown.classList.toggle('show');
+        }
+
+       async function handleNotificationClick(notification) {
+            try {
+                await fetch('/api/markNotificationRead', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        id: notification.id,
+                        partitionKey: notification.category 
+                    })
+                });
+            } catch (e) { console.error(e); }
+
+            document.getElementById('notification-dropdown').classList.remove('show');
             fetchNotifications();
 
-            // Ustawienie obsługi załącznika przy zamykaniu (Limit 50MB)
-            const closingFileInput = document.getElementById('closing-attachment-input');
-            const closingFileName = document.getElementById('closing-file-name');
-            
-            closingFileInput.addEventListener('change', () => {
-                if (closingFileInput.files.length > 0) {
-                    const file = closingFileInput.files[0];
-                    const maxSize = 50 * 1024 * 1024; // 50 MB
-                    if (file.size > maxSize) {
-                        alert("Plik jest za duży! Maksymalny rozmiar to 50MB.");
-                        closingFileInput.value = ""; 
-                        closingFileName.textContent = "";
-                        return;
-                    }
-                    closingFileName.textContent = `Wybrano plik: ${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB)`;
-                } else {
-                    closingFileName.textContent = '';
-                }
-            });
+            if (notification.ticketId) {
+                openTicketModal(notification.ticketId);
+            }
+        }
 
-            startAutoRefresh();
+        window.onclick = function(event) {
+            if (!event.target.closest('.notification-wrapper')) {
+                const dropdown = document.getElementById('notification-dropdown');
+                if (dropdown && dropdown.classList.contains('show')) {
+                    dropdown.classList.remove('show');
+                }
+            }
         }
 
         async function fetchCategories() {
             try {
-                const res = await fetch('/api/getSettings');
-                if(res.ok) {
-                    const data = await res.json();
-                    categoriesList = data.categories || [];
-                    
-                    // Wypełnij select w modalu
-                    const select = document.getElementById('modal-category-select');
-                    select.innerHTML = '';
-                    categoriesList.forEach(cat => {
-                        const opt = document.createElement('option');
-                        opt.value = cat.name;
-                        opt.textContent = cat.name;
-                        select.appendChild(opt);
-                    });
+                const response = await fetch('/api/getSettings');
+                if (response.ok) {
+                    const settings = await response.json();
+                    cachedCategories = settings.categories || [];
                 }
-            } catch(e) { console.error("Błąd pobierania kategorii:", e); }
+            } catch (error) {
+                console.error("Błąd pobierania kategorii:", error);
+            }
         }
 
-        // --- GŁÓWNA FUNKCJA POBIERANIA ZGŁOSZEŃ ---
+        function renderPagination(currentPageNum, totalPages) {
+            const container = document.getElementById('pagination-container');
+            container.innerHTML = '';
+            for (let i = 1; i <= totalPages; i++) {
+                const btn = document.createElement('button');
+                btn.className = 'page-btn';
+                btn.textContent = i;
+                if (i === currentPageNum) btn.classList.add('active');
+                btn.onclick = () => {
+                    currentPage = i;
+                    loadTickets();
+                };
+                container.appendChild(btn);
+            }
+        }
+
+        // --- WKLEJ TO W MIEJSCE STAREJ FUNKCJI loadTickets ---
         async function loadTickets() {
             const searchInput = document.getElementById('search-input');
             const fieldSelect = document.getElementById('search-field');
-            const quickFilterSelect = document.getElementById('quick-filter');
+            const quickFilterSelect = document.getElementById('quick-filter'); // <--- NOWOŚĆ
             
             const searchTerm = searchInput ? searchInput.value : '';
             const searchField = fieldSelect ? fieldSelect.value : 'id';
-            // Domyślnie 'all' jeśli element nie istnieje (dla zwykłego usera)
-            const quickFilter = quickFilterSelect ? quickFilterSelect.value : 'all';
+            const quickFilter = quickFilterSelect ? quickFilterSelect.value : 'all'; // <--- NOWOŚĆ
 
             const tbody = document.getElementById('tickets-tbody');
-            tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">Ładowanie zgłoszeń...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10">Ładowanie zgłoszeń...</td></tr>';
             
             try {
                 const encodedSearch = encodeURIComponent(searchTerm);
                 const encodedField = encodeURIComponent(searchField);
-                const encodedQuick = encodeURIComponent(quickFilter);
+                const encodedQuick = encodeURIComponent(quickFilter); // <--- NOWOŚĆ
                 
+                // Dodajemy &quickFilter=... do URL
                 const response = await fetch(`/api/getTickets?page=${currentPage}&search=${encodedSearch}&field=${encodedField}&quickFilter=${encodedQuick}`);
                 
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
                 
+                // ... reszta funkcji BEZ ZMIAN (kopiuj-wklej starą logikę renderowania) ...
                 const { tickets, totalPages } = data;
 
                 tbody.innerHTML = '';
                 if (tickets.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;">Brak zgłoszeń spełniających kryteria.</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="10">Brak zgłoszeń. (Filtr: ${quickFilter})</td></tr>`;
                     renderPagination(0, 0);
                     return;
                 }
-                
+
                 tickets.forEach(ticket => {
                     const row = tbody.insertRow();
                     row.className = 'ticket-row';
@@ -336,7 +331,7 @@
 
                     const isClosed = ['Rozwiązane', 'Odrzucone', 'Zamknięte'].includes(ticket.status);
 
-                    if (!isClosed && ticket.dates && ticket.dates.guaranteedResolutionAt) {
+                    if (!isClosed) {
                         const now = new Date();
                         const slaTime = new Date(ticket.dates.guaranteedResolutionAt);
                         const diffMs = slaTime.getTime() - now.getTime();
@@ -348,12 +343,11 @@
 
                     const statusClass = `status-${ticket.status.toLowerCase().replace(/\s/g, '-')}`;
                     const reportingUserDisplay = escapeHTML(ticket.reportingUser.name).replace('@', '<br>@');
-                    const personDisplay = ticket.assignedTo && ticket.assignedTo.person ? escapeHTML(ticket.assignedTo.person).replace('@', '<br>@') : '---';
-                    const groupDisplay = ticket.assignedTo ? escapeHTML(ticket.assignedTo.group) : '';
+                    const personDisplay = ticket.assignedTo.person ? escapeHTML(ticket.assignedTo.person).replace('@', '<br>@') : '---';
 
-                    const createdDisplay = ticket.dates ? formatDateTwoLines(ticket.dates.createdAt) : '-';
-                    const slaDisplay = ticket.dates ? formatDateTwoLines(ticket.dates.guaranteedResolutionAt) : '-';
-                    const closedDisplay = ticket.dates ? formatDateTwoLines(ticket.dates.closedAt) : '-';
+                    const createdDisplay = formatDateTwoLines(ticket.dates.createdAt);
+                    const slaDisplay = formatDateTwoLines(ticket.dates.guaranteedResolutionAt);
+                    const closedDisplay = formatDateTwoLines(ticket.dates.closedAt);
 
                     row.innerHTML = `
                         <td>${escapeHTML(ticket.id)}</td>
@@ -362,7 +356,7 @@
                         <td>${reportingUserDisplay}</td>
                         <td>${escapeHTML(ticket.category)}</td>
                         <td>${personDisplay}</td>
-                        <td>${groupDisplay}</td>
+                        <td>${escapeHTML(ticket.assignedTo.group)}</td>
                         <td>${createdDisplay}</td>
                         <td>${slaDisplay}</td>
                         <td>${closedDisplay}</td>
@@ -375,381 +369,404 @@
             }
         }
 
-        // --- PAGINACJA ---
-        function renderPagination(current, total) {
-            const container = document.getElementById('pagination');
-            container.innerHTML = '';
-            if (total <= 1) return;
-
-            // Przycisk "Poprzednia"
-            const prevBtn = document.createElement('button');
-            prevBtn.textContent = 'Poprzednia';
-            prevBtn.disabled = current === 1;
-            prevBtn.onclick = () => { if(current > 1) { currentPage--; loadTickets(); }};
-            container.appendChild(prevBtn);
-
-            // Informacja o stronie
-            const info = document.createElement('span');
-            info.textContent = `Strona ${current} z ${total}`;
-            info.style.margin = "0 10px";
-            container.appendChild(info);
-
-            // Przycisk "Następna"
-            const nextBtn = document.createElement('button');
-            nextBtn.textContent = 'Następna';
-            nextBtn.disabled = current === total;
-            nextBtn.onclick = () => { if(current < total) { currentPage++; loadTickets(); }};
-            container.appendChild(nextBtn);
-        }
-
-        // --- OBSŁUGA LISTENERY (Przycisk Szukaj, Enter, Filtr) ---
-        document.getElementById('search-btn').addEventListener('click', () => {
-            currentPage = 1;
-            loadTickets();
-        });
-
-        document.getElementById('search-input').addEventListener('keyup', (e) => {
-            if (e.key === 'Enter') {
-                currentPage = 1;
-                loadTickets();
-            }
-        });
-
-        const quickFilterEl = document.getElementById('quick-filter');
-        if (quickFilterEl) {
-            quickFilterEl.addEventListener('change', () => {
-                currentPage = 1;
-                loadTickets();
-            });
-        }
-
-        // --- OBSŁUGA MODALA I KOMENTARZY ---
         async function openTicketModal(ticketId) {
-            currentTicketId = ticketId;
             const modal = document.getElementById('ticket-modal');
-            
-            // Wyczyść stan
-            document.getElementById('modal-title').textContent = 'Ładowanie...';
-            
             modal.classList.remove('hidden');
+            document.getElementById('modal-body').innerHTML = '<p class="loading-message">Ładowanie szczegółów...</p>';
+            
+            clearInterval(refreshInterval); 
 
             try {
-                // Pobieramy konkretny ticket (lub szukamy w załadowanych, ale lepiej pobrać świeży)
-                // Uproszczenie: używamy endpointu listy z filtrem ID, w realnej aplikacji endpoint getTicketById byłby lepszy.
-                // Tutaj dla spójności użyjmy getTickets z filtrem ID, bo mamy to gotowe.
-                const encodedId = encodeURIComponent(ticketId);
-                const res = await fetch(`/api/getTickets?search=${encodedId}&field=id`);
-                const data = await res.json();
-                
-                if(data.tickets && data.tickets.length > 0) {
-                    const ticket = data.tickets[0];
-                    fillModalData(ticket);
-                }
-            } catch(e) { console.error(e); }
+                const response = await fetch(`/api/getTicket?id=${ticketId}`);
+                if (!response.ok) throw new Error('Nie udało się pobrać szczegółów zgłoszenia.');
+                currentTicketData = await response.json();
+                populateModal(currentTicketData);
+            } catch(error) {
+                console.error(error);
+                document.getElementById('modal-body').innerHTML = '<p class="error-message">Wystąpił błąd podczas ładowania danych.</p>';
+            }
         }
-
-        function fillModalData(ticket) {
-            document.getElementById('modal-title').textContent = `${ticket.id}: ${ticket.title}`;
-            document.getElementById('modal-user').textContent = ticket.reportingUser.name + ` (${ticket.reportingUser.email})`;
-            document.getElementById('modal-status').textContent = ticket.status;
-            
-            const catSelect = document.getElementById('modal-category-select');
-            catSelect.value = ticket.category;
-            catSelect.disabled = true;
-            document.getElementById('btn-save-category').classList.add('hidden');
-            
-            if(currentUserDetails.userRoles.includes('sd')) {
-                document.getElementById('btn-change-category').classList.remove('hidden');
+        
+        function populateModal(ticket) {
+            let categoryOptions = '';
+            if (cachedCategories.length > 0) {
+                categoryOptions = cachedCategories.map(cat => 
+                    `<option value="${escapeHTML(cat.name)}">${escapeHTML(cat.name)}</option>`
+                ).join('');
+            } else {
+                categoryOptions = `<option value="${escapeHTML(ticket.category)}">${escapeHTML(ticket.category)}</option>`;
             }
 
-            document.getElementById('modal-assigned').textContent = ticket.assignedTo.person || "Brak";
-            document.getElementById('modal-group').textContent = ticket.assignedTo.group || "-";
-            document.getElementById('modal-date').textContent = formatDate(ticket.dates.createdAt);
-            document.getElementById('modal-description').textContent = ticket.content;
-
-            const attachmentDiv = document.getElementById('modal-attachment-link');
-            attachmentDiv.innerHTML = '';
-            if(ticket.attachments && ticket.attachments.length > 0) {
-                ticket.attachments.forEach(att => {
-                    const a = document.createElement('a');
-                    a.href = att.url;
-                    a.target = '_blank';
-                    a.textContent = `📎 Pobierz załącznik: ${att.fileName}`;
-                    a.style.display = 'block';
-                    a.style.marginBottom = '5px';
-                    attachmentDiv.appendChild(a);
-                });
-            }
-
-            renderComments(ticket.comments);
-        }
-
-        function renderComments(comments) {
-            const list = document.getElementById('comments-list');
-            list.innerHTML = '';
-            if(!comments || comments.length === 0) {
-                list.innerHTML = '<p style="color:#888;">Brak komentarzy.</p>';
-                return;
-            }
-
-            comments.forEach(c => {
-                const div = document.createElement('div');
-                div.className = 'comment-item';
-                if(c.isSystemComment) div.classList.add('system');
-
-                const dateStr = formatDate(c.timestamp);
-                div.innerHTML = `
-                    <div class="comment-meta">
-                        <strong>${escapeHTML(c.author)}</strong> <span>${dateStr}</span>
+            const modalBody = document.getElementById('modal-body');
+            modalBody.innerHTML = `
+                <aside id="modal-actions-panel" class="modal-actions-panel hidden">
+                    <h4>Akcje</h4>
+                    <button class="btn-action" data-action="close-ticket">Zamknij zgłoszenie</button>
+                    <button class="btn-action" data-action="open-ticket">Ustaw jako otwarte</button>
+                    <button class="btn-action" data-action="assign-tome">Przypisz do mnie</button>
+                    <div class="form-group">
+                        <label for="category-select">Zmień kategorię</label>
+                        <select id="category-select" class="form-control">
+                            ${categoryOptions}
+                        </select>
                     </div>
-                    <div class="comment-text">${escapeHTML(c.text)}</div>
-                `;
-                
-                // Załącznik w komentarzu (jeśli jest)
-                if (c.attachment) {
-                    const attLink = document.createElement('a');
-                    attLink.href = c.attachment.url;
-                    attLink.target = '_blank';
-                    attLink.style.display = 'block';
-                    attLink.style.marginTop = '5px';
-                    attLink.style.fontSize = '12px';
-                    attLink.textContent = `📎 ${c.attachment.fileName}`;
-                    div.appendChild(attLink);
-                }
+                </aside>
+                <div class="modal-details-panel">
+                    <div id="modal-meta-info"></div>
+                    <h4>Treść zgłoszenia:</h4>
+                    <p id="modal-content-text"></p>
+                    <h4>Załączniki:</h4>
+                    <div id="modal-attachments"></div>
+                    <div class="comments-section">
+                        <h4>Historia zgłoszenia</h4>
+                        <div id="comments-list" class="comments-list"></div>
+                        <form id="comment-form" class="comment-form hidden">
+                            <textarea id="comment-input" placeholder="Dodaj komentarz..."></textarea>
+                            <button type="submit" class="btn btn-primary">Dodaj</button>
+                        </form>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('modal-title').innerText = `Zgłoszenie: ${ticket.id} - ${escapeHTML(ticket.title)}`;
+            document.getElementById('modal-content-text').innerText = ticket.content;
+            
+            const metaInfo = `
+                <p><strong>Status:</strong> <span id="modal-status-badge" class="status-badge status-${ticket.status.toLowerCase().replace(/\s/g, '-')}">${escapeHTML(ticket.status)}</span></p>
+                <p><strong>Zgłaszający:</strong> ${escapeHTML(ticket.reportingUser.name)}</p>
+                <p><strong>Odpowiedzialny:</strong> ${escapeHTML(ticket.assignedTo.person || '---')}</p>
+                <p><strong>Grupa:</strong> ${escapeHTML(ticket.assignedTo.group)}</p>
+                <p><strong>Utworzono:</strong> ${new Date(ticket.dates.createdAt).toLocaleString('pl-PL')}</p>
+                <p><strong>SLA:</strong> ${new Date(ticket.dates.guaranteedResolutionAt).toLocaleString('pl-PL')}</p>
+            `;
+            document.getElementById('modal-meta-info').innerHTML = metaInfo;
 
-                list.appendChild(div);
-            });
+            const attachmentsContainer = document.getElementById('modal-attachments');
+            attachmentsContainer.innerHTML = '';
+            if (ticket.attachments && ticket.attachments.length > 0) {
+                ticket.attachments.forEach(att => {
+                    const link = document.createElement('a');
+                    link.href = att.url;
+                    link.textContent = att.fileName;
+                    link.target = "_blank";
+                    link.rel = "noopener noreferrer";
+                    attachmentsContainer.appendChild(link);
+                    attachmentsContainer.appendChild(document.createElement('br'));
+                });
+            } else {
+                attachmentsContainer.innerText = 'Brak załączników.';
+            }
+
+            const commentsList = document.getElementById('comments-list');
+            commentsList.innerHTML = '';
+            if (ticket.comments && ticket.comments.length > 0) {
+                ticket.comments.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                ticket.comments.forEach(comment => {
+                    const commentEl = document.createElement('div');
+                    commentEl.className = `comment ${comment.isSystemComment ? 'system-comment' : ''}`;
+                    const attachmentHTML = comment.attachment 
+                        ? `<div class="comment-attachment"><a href="${comment.attachment.url}" target="_blank">${escapeHTML(comment.attachment.fileName)}</a></div>` 
+                        : '';
+                    commentEl.innerHTML = `
+                        <div class="comment-header">
+                            <strong>${escapeHTML(comment.author)}</strong>
+                            <span class="comment-date">${new Date(comment.timestamp).toLocaleString('pl-PL')}</span>
+                        </div>
+                        <p class="comment-text">${escapeHTML(comment.text)}</p>
+                        ${attachmentHTML}
+                    `;
+                    commentsList.appendChild(commentEl);
+                });
+                commentsList.scrollTop = commentsList.scrollHeight; 
+            } else {
+                commentsList.innerHTML = '<p>Brak komentarzy.</p>';
+            }
+
+            const isServiceDesk = currentUserDetails.userRoles.includes('sd');
+            const isClosed = ['Rozwiązane', 'Odrzucone', 'Zamknięte'].includes(ticket.status);
+            const actionsPanel = document.getElementById('modal-actions-panel');
+            
+            actionsPanel.classList.toggle('hidden', !isServiceDesk);
+            actionsPanel.classList.toggle('is-closed', isClosed);
+            
+            document.getElementById('modal-save-btn').classList.toggle('hidden', !isServiceDesk);
+            document.getElementById('comment-form').classList.toggle('hidden', !isServiceDesk || isClosed);
+            
+            document.getElementById('category-select').value = ticket.category;
+            addModalEventListeners(); 
         }
 
-        function closeTicketModal() {
+        function closeModal() {
             document.getElementById('ticket-modal').classList.add('hidden');
-            currentTicketId = null;
+            currentTicketData = null;
+            pendingChanges = {};
+            document.getElementById('modal-status').classList.add('hidden');
+            startAutoRefresh();
         }
 
-        // --- AKCJE NA ZGŁOSZENIU ---
-
-        async function assignToMe() {
-            if(!currentTicketId) return;
-            if(!confirm("Przypisać zgłoszenie do siebie?")) return;
+        async function saveChanges() {
+            if (Object.keys(pendingChanges).length === 0) return;
             
-            await updateTicket(currentTicketId, { 
-                assignedTo: { person: currentUserDetails.userDetails } 
-            });
-            openTicketModal(currentTicketId); // Odśwież modal
-            loadTickets(); // Odśwież listę
+            const statusEl = document.getElementById('modal-status');
+            statusEl.textContent = 'Zapisywanie...';
+            statusEl.classList.remove('hidden', 'success', 'error');
+
+            try {
+                const response = await fetch('/api/updateTicket', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ticketId: currentTicketData.id,
+                        changes: pendingChanges
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+                }
+                
+                const updatedTicket = await response.json();
+                statusEl.textContent = 'Zmiany zapisane pomyślnie!';
+                statusEl.classList.add('success');
+                
+                pendingChanges = {}; 
+                currentTicketData = updatedTicket;
+                populateModal(currentTicketData); 
+                loadTickets(); 
+
+                setTimeout(() => {
+                    statusEl.classList.add('hidden');
+                }, 2000);
+
+            } catch (error) {
+                 statusEl.textContent = 'Błąd: ' + error.message;
+                 statusEl.classList.add('error');
+            }
         }
 
-        function enableCategoryEdit() {
-            document.getElementById('modal-category-select').disabled = false;
-            document.getElementById('btn-change-category').classList.add('hidden');
-            document.getElementById('btn-save-category').classList.remove('hidden');
-        }
-
-        async function saveCategoryChange() {
-            const newCat = document.getElementById('modal-category-select').value;
-            await updateTicket(currentTicketId, { category: newCat });
-            
-            document.getElementById('modal-category-select').disabled = true;
-            document.getElementById('btn-save-category').classList.add('hidden');
-            document.getElementById('btn-change-category').classList.remove('hidden');
-            loadTickets();
-        }
-
-        async function addComment() {
-            const text = document.getElementById('new-comment-text').value.trim();
-            if(!text) return;
-
-            await updateTicket(currentTicketId, { 
-                newComment: { text: text } 
-            });
-            document.getElementById('new-comment-text').value = '';
-            openTicketModal(currentTicketId); // Odśwież
-        }
-
-        // --- ZAMYKANIE ZGŁOSZENIA ---
-        function openCloseTicketModal() {
+        function openClosingModal() {
             document.getElementById('closing-modal').classList.remove('hidden');
         }
 
-        async function confirmCloseTicket() {
-            const status = document.getElementById('closing-status').value;
-            const comment = document.getElementById('closing-comment').value.trim();
-            const fileInput = document.getElementById('closing-attachment-input');
-
-            if(!comment) {
-                alert("Komentarz zamykający jest wymagany!");
-                return;
+        function closeClosingModal() {
+            const modal = document.getElementById('closing-modal');
+            modal.classList.add('hidden');
+            document.getElementById('closing-form').reset();
+            document.getElementById('closing-modal-status').classList.add('hidden');
+            document.getElementById('closing-file-name').textContent = '';
+            
+            const submitButton = document.querySelector('#closing-form button[type="submit"]');
+            if (submitButton) {
+                submitButton.disabled = false;
             }
+        }
 
-            let attachmentData = null;
+        async function handleClosingFormSubmit(event) {
+            event.preventDefault();
+            const form = event.target;
+            const submitButton = form.querySelector('button[type="submit"]');
+            const statusMessage = document.getElementById('closing-modal-status');
+            
+            submitButton.disabled = true;
+            statusMessage.textContent = 'Przetwarzanie...';
+            statusMessage.classList.remove('hidden', 'success', 'error');
+
+            let attachmentInfo = null;
+            const fileInput = form.elements['closing-attachment-input'];
+
             if (fileInput.files.length > 0) {
-                // Upload pliku
+                statusMessage.textContent = 'Przesyłanie załącznika...';
                 const file = fileInput.files[0];
                 const reader = new FileReader();
-                
-                // Promise wrapper dla FileReader
-                const fileContent = await new Promise((resolve, reject) => {
-                    reader.onload = () => resolve(reader.result);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(file);
-                });
+                reader.readAsDataURL(file);
+                await new Promise(resolve => reader.onload = resolve);
 
                 try {
-                    const uploadRes = await fetch('/api/uploadAttachment', {
+                    const uploadResponse = await fetch('/api/uploadAttachment', {
                         method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ fileName: file.name, fileContent: fileContent })
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ fileName: file.name, fileContent: reader.result })
                     });
-                    
-                    if (!uploadRes.ok) {
-                        const err = await uploadRes.json();
-                        alert(`Błąd wysyłania pliku: ${err.message || 'Nieznany błąd'}`);
-                        return; 
-                    }
-                    const uploadData = await uploadRes.json();
-                    attachmentData = { fileName: uploadData.fileName, url: uploadData.url };
-                    
-                } catch (e) {
-                    alert("Błąd połączenia podczas wysyłania pliku.");
+                    if (!uploadResponse.ok) throw new Error('Błąd przesyłania pliku');
+                    attachmentInfo = await uploadResponse.json();
+                } catch (error) {
+                    statusMessage.textContent = `Błąd: ${error.message}`;
+                    statusMessage.classList.add('error');
+                    submitButton.disabled = false;
                     return;
                 }
             }
-
-            // Aktualizacja zgłoszenia
-            const changes = {
-                status: status,
-                closingComment: comment
+            
+            pendingChanges = {
+                status: form.elements.closingStatus.value,
+                closingComment: `Zgłoszenie zamknięte jako "${form.elements.closingStatus.value}": ${form.elements['closing-comment-input'].value}`,
+                attachment: attachmentInfo ? { fileName: attachmentInfo.fileName, url: attachmentInfo.url } : null
             };
             
-            // Jeśli był załącznik, dodajemy go jako komentarz systemowy z załącznikiem
-            if(attachmentData) {
-                changes.newComment = {
-                    text: `Dodano załącznik przy zamykaniu: ${comment}`,
-                    attachment: attachmentData
+            await saveChanges();
+            closeClosingModal();
+        }
+        
+        function addModalEventListeners() {
+            const modal = document.getElementById('ticket-modal');
+            const closeBtn = modal.querySelector('#modal-close-btn');
+            const saveBtn = modal.querySelector('#modal-save-btn');
+            const actionsPanel = modal.querySelector('#modal-actions-panel');
+            const categorySelect = modal.querySelector('#category-select');
+            const commentForm = modal.querySelector('#comment-form');
+
+            if (closeBtn) closeBtn.onclick = closeModal;
+            if (saveBtn) saveBtn.onclick = saveChanges;
+
+            if (actionsPanel) {
+                actionsPanel.querySelectorAll('.btn-action').forEach(btn => {
+                    btn.onclick = (e) => {
+                        const action = e.target.dataset.action;
+                        if (action === 'close-ticket') {
+                            openClosingModal();
+                        } else {
+                            if (action === 'open-ticket') {
+                                pendingChanges.status = 'Otwarte';
+                            }
+                            if (action === 'assign-tome') {
+                                pendingChanges.assignedTo = { person: currentUserDetails.userDetails };
+                            }
+                            
+                            const statusEl = modal.querySelector('#modal-status');
+                            statusEl.textContent = 'Zmiany oczekują na zapisanie.';
+                            statusEl.classList.remove('hidden', 'success', 'error');
+                        }
+                    };
+                });
+            }
+            
+            if (categorySelect) {
+                categorySelect.onchange = (e) => {
+                    pendingChanges.category = e.target.value;
+                    const statusEl = modal.querySelector('#modal-status');
+                    statusEl.textContent = 'Zmiany oczekują na zapisanie.';
+                    statusEl.classList.remove('hidden', 'success', 'error');
                 };
             }
-
-            await updateTicket(currentTicketId, changes);
-
-            // Sprzątanie
-            document.getElementById('closing-comment').value = '';
-            document.getElementById('closing-attachment-input').value = '';
-            document.getElementById('closing-file-name').textContent = '';
-            document.getElementById('closing-modal').classList.add('hidden');
-            closeTicketModal();
-            loadTickets();
-        }
-
-        // --- UNIWERSALNA FUNKCJA UPDATE ---
-        async function updateTicket(id, changes) {
-            try {
-                const res = await fetch('/api/updateTicket', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ticketId: id, changes: changes })
-                });
-                if(!res.ok) throw new Error("Update failed");
-            } catch(e) {
-                alert("Wystąpił błąd podczas aktualizacji zgłoszenia.");
-                console.error(e);
-            }
-        }
-
-        // --- POWIADOMIENIA ---
-        async function fetchNotifications() {
-            try {
-                const res = await fetch(`/api/getNotifications?t=${new Date().getTime()}`);
-                if(res.ok) {
-                    const notifs = await res.json();
-                    updateNotificationUI(notifs);
-                }
-            } catch(e) { console.error("Błąd sieci przy pobieraniu powiadomień:", e); }
-        }
-
-        function updateNotificationUI(notifs) {
-            const badge = document.getElementById('notification-badge');
-            const list = document.getElementById('notifications-list');
             
-            const unreadCount = notifs.filter(n => !n.isRead).length;
-            if(unreadCount > 0) {
-                badge.textContent = unreadCount;
-                badge.classList.remove('hidden');
-            } else {
-                badge.classList.add('hidden');
-            }
-
-            list.innerHTML = '';
-            if(notifs.length === 0) {
-                list.innerHTML = '<div style="padding:10px; text-align:center; color:#999;">Brak powiadomień</div>';
-            } else {
-                notifs.forEach(n => {
-                    const item = document.createElement('div');
-                    item.className = `notification-item ${n.isRead ? 'read' : 'unread'}`;
-                    item.innerHTML = `
-                        <div class="notif-msg">${escapeHTML(n.message)}</div>
-                        <div class="notif-time">${formatDate(n.createdAt)}</div>
-                    `;
-                    item.onclick = () => {
-                         markAsRead(n.id);
-                         if(n.ticketId) openTicketModal(n.ticketId);
-                    };
-                    list.appendChild(item);
-                });
+            if (commentForm) {
+                commentForm.onsubmit = (e) => {
+                    e.preventDefault();
+                    const commentInput = modal.querySelector('#comment-input');
+                    if(commentInput.value.trim()){
+                        pendingChanges.newComment = { text: commentInput.value.trim() };
+                        commentInput.value = '';
+                        const statusEl = modal.querySelector('#modal-status');
+                        statusEl.textContent = 'Zmiany oczekują na zapisanie.';
+                        statusEl.classList.remove('hidden', 'success', 'error');
+                    }
+                };
             }
         }
 
-        function toggleNotifications() {
-            document.getElementById('notifications-dropdown').classList.toggle('hidden');
-        }
-
-        async function markAsRead(id) {
-            await fetch('/api/markNotificationRead', {
-                method: 'POST',
-                body: JSON.stringify({ id: id })
-            });
-            fetchNotifications();
-        }
-
-        async function markAllRead() {
-             await fetch('/api/markNotificationRead', {
-                method: 'POST',
-                body: JSON.stringify({ all: true })
-            });
-            fetchNotifications();
-        }
-
-        // --- UTILS ---
         function startAutoRefresh() {
+             clearInterval(refreshInterval);
+             clearInterval(notificationsInterval);
+             
              refreshInterval = setInterval(() => {
                 if (document.getElementById('ticket-modal').classList.contains('hidden') && 
                     document.getElementById('closing-modal').classList.contains('hidden')) {
-                    loadTickets(); 
+                    loadTickets(document.getElementById('search-input').value);
                 }
-            }, 60000); 
+            }, 60000);
 
             notificationsInterval = setInterval(fetchNotifications, 60000);
         }
 
-        function escapeHTML(str) {
-            if(!str) return '';
-            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        async function initializeDashboard() {
+            try {
+                const response = await fetch('/.auth/me');
+                if (response.status === 401) {
+                    window.location.href = '/index.html';
+                    return;
+                }
+                const data = await response.json();
+                
+                if (!data.clientPrincipal) {
+                    window.location.href = 'index.html';
+                    return;
+                }
+                currentUserDetails = data.clientPrincipal;
+                document.getElementById('userName').textContent = currentUserDetails.userDetails;
+                
+                const isServiceDesk = currentUserDetails.userRoles.includes('sd');
+                
+                if (isServiceDesk) {
+                    document.getElementById('dashboard-title').textContent = "Wszystkie ostatnie zgłoszenia";
+                    
+                    const adminLink = document.getElementById('admin-link');
+                    if(adminLink) adminLink.classList.remove('hidden');
+
+                    const reportsLink = document.getElementById('reports-link');
+                    if(reportsLink) reportsLink.classList.remove('hidden');
+                } else {
+                    // UKRYWAMY FILTR DLA ZWYKŁYCH USERÓW
+                    const quickFilter = document.getElementById('quick-filter');
+                    if(quickFilter) quickFilter.classList.add('hidden');
+                }
+
+                await fetchCategories();
+                loadTickets();
+                
+                fetchNotifications();
+                
+                startAutoRefresh();
+
+                    document.getElementById('search-btn').addEventListener('click', () => {
+                        currentPage = 1; // Resetujemy na pierwszą stronę wyników
+                        loadTickets();   // Wywołujemy bez parametrów!
+                    });
+
+                    // Obsługa wciśnięcia ENTER w polu tekstowym
+                    document.getElementById('search-input').addEventListener('keyup', (e) => {
+                        if (e.key === 'Enter') {
+                            currentPage = 1;
+                            loadTickets(); // Wywołujemy bez parametrów!
+                        }
+                    });
+                
+                document.getElementById('closing-modal-close-btn').addEventListener('click', closeClosingModal);
+                document.getElementById('closing-form').addEventListener('submit', handleClosingFormSubmit);
+                
+                const closingFileInput = document.getElementById('closing-attachment-input');
+                const closingFileName = document.getElementById('closing-file-name');
+                
+                closingFileInput.addEventListener('change', () => {
+                    if (closingFileInput.files.length > 0) {
+                        const file = closingFileInput.files[0];
+                        const maxSize = 50 * 1024 * 1024; // 50 MB
+
+                        if (file.size > maxSize) {
+                            alert("Plik jest za duży! Maksymalny rozmiar to 50MB.");
+                            closingFileInput.value = "";
+                            closingFileName.textContent = "";
+                            return;
+                        }
+
+                        closingFileName.textContent = `Wybrano plik: ${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB)`;
+                    } else {
+                        closingFileName.textContent = '';
+                    }
+                });
+
+            } catch (error) {
+                console.error('Błąd inicjalizacji panelu:', error);
+            }
         }
 
-        function formatDate(isoStr) {
-            if(!isoStr) return '';
-            const d = new Date(isoStr);
-            return d.toLocaleString('pl-PL');
-        }
+        // Obsługa zmiany szybkiego filtra
+        document.getElementById('quick-filter').addEventListener('change', () => {
+            currentPage = 1;
+            loadTickets(); // Przeładowanie tabeli
+        });
 
-        function formatDateTwoLines(isoStr) {
-            if(!isoStr) return '-';
-            const d = new Date(isoStr);
-            const date = d.toLocaleDateString('pl-PL');
-            const time = d.toLocaleTimeString('pl-PL', {hour: '2-digit', minute:'2-digit'});
-            return `<div>${date}</div><div style="color:#666; font-size:0.85em;">${time}</div>`;
-        }
-
-        init();
+        initializeDashboard();
     </script>
 </body>
 </html>
