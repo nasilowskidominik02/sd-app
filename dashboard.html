@@ -281,30 +281,26 @@
             const container = document.getElementById('pagination-container');
             container.innerHTML = '';
 
-            // Informacja o liczbie wyników
+            // 1. Kontener na tekst informacyjny
             const info = document.createElement('div');
-            info.style.marginBottom = '10px';
-            info.style.fontSize = '13px';
-            info.style.color = '#666';
+            info.className = 'pagination-info'; // Używamy klasy z CSS
             info.textContent = `Strona ${currentPage} | Wszystkich zgłoszeń: ${totalCount}`;
             container.appendChild(info);
 
+            // 2. Kontener na przyciski
             const buttonsDiv = document.createElement('div');
-            buttonsDiv.style.display = 'flex';
-            buttonsDiv.style.gap = '10px';
+            buttonsDiv.className = 'pagination-buttons'; // Używamy klasy z CSS
 
             // Przycisk "Poprzednia"
             const prevBtn = document.createElement('button');
-            prevBtn.className = 'btn-primary'; // Możesz dodać styl btn-secondary
             prevBtn.textContent = 'Poprzednia';
             prevBtn.disabled = currentPage === 1; // Nieaktywny na 1. stronie
             prevBtn.onclick = () => loadTickets(currentPage - 1);
             
             // Przycisk "Następna"
             const nextBtn = document.createElement('button');
-            nextBtn.className = 'btn-primary';
             nextBtn.textContent = 'Następna';
-            // Aktywny tylko, jeśli backend zwrócił token do następnej strony
+            // Aktywny tylko, jeśli mamy token do następnej strony
             nextBtn.disabled = !hasNextPage; 
             nextBtn.onclick = () => loadTickets(currentPage + 1);
 

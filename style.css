@@ -320,12 +320,49 @@ a:hover {
 .logout-button { background-color: var(--danger-red); color: var(--white); border: none; padding: 12px; border-radius: var(--border-radius); display: inline-block; margin-top: 16px;}
 
 /* Paginacja */
-.pagination { margin-top: 16px; display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; }
-.page-btn {
-    border: 1px solid var(--gray-border); background-color: var(--white); padding: 4px 10px;
-    border-radius: var(--border-radius); cursor: pointer; font-size: 12px;
+.pagination {
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column; /* To ustawia elementy jeden pod drugim */
+    align-items: center;    /* To centruje je na środku */
+    gap: 12px;              /* Odstęp między tekstem a przyciskami */
 }
-.page-btn.active { background-color: var(--primary-blue); color: var(--white); border-color: var(--primary-blue); }
+
+.pagination-info {
+    font-size: 13px;
+    color: var(--text-light);
+    font-weight: 500;
+}
+
+.pagination-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+/* Styl przycisków paginacji (bazujący na btn-primary) */
+.pagination button {
+    background-color: var(--primary-blue);
+    color: var(--white);
+    border: none;
+    padding: 8px 16px;
+    border-radius: var(--border-radius);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s, opacity 0.2s;
+}
+
+.pagination button:hover:not(:disabled) {
+    background-color: var(--primary-blue-hover);
+}
+
+/* Styl dla nieaktywnego przycisku (np. gdy nie ma następnej strony) */
+.pagination button:disabled {
+    background-color: #cbd5e1; /* Jasny szary */
+    color: #64748b;            /* Ciemniejszy szary tekst */
+    cursor: not-allowed;
+    opacity: 0.7;
+}
 
 /* Formularze */
 .form-container { max-width: 800px; width: 100%; }
