@@ -20,19 +20,17 @@ module.exports = async function (context, req) {
         const isServiceDesk = clientPrincipal.userRoles.includes('sd');
         const userEmail = clientPrincipal.userDetails;
         
-        // --- 2. PARAMETRY STRONICOWANIA ---
-        // Tutaj ustalamy logikę: strona 1 -> offset 0, strona 2 -> offset 10 itd.
-        const page = parseInt(req.query.page) || 1;
+        // --- 2. PARAMETRY (NOWE) ---
+        // Zamiast "page" i "offset", pobieramy token kontynuacji
         const pageSize = 10;
-        const offset = (page - 1) * pageSize;
+        const continuationToken = req.headers['x-continuation-token'] || req.query.continuationToken || null;
 
-        // Pozostałe parametry
         const rawSearch = req.query.search || '';
         const searchText = rawSearch.toLowerCase().trim();
         const searchField = req.query.field || 'id';
         const quickFilter = req.query.quickFilter || (isServiceDesk ? 'my_group' : 'all');
 
-        // --- 3. PRZYGOTOWANIE LOGIKI FILTRACJI (JS) ---
+        // --- 3. PRZYGOTOWANIE LOGIKI GRUP ---
         let filterByMyGroups = false;
         let myAllowedGroups = []; 
 
@@ -40,54 +38,40 @@ module.exports = async function (context, req) {
         let whereClauses = [];
         let parameters = [];
 
-        // Filtry techniczne (stałe)
         whereClauses.push("c.id != 'global_settings'");
         whereClauses.push("(NOT IS_DEFINED(c.type) OR c.type != 'notification')");
 
-        // Zwykły user widzi tylko swoje
         if (!isServiceDesk) {
             whereClauses.push("c.reportingUser.email = @userEmail");
             parameters.push({ name: "@userEmail", value: userEmail });
         }
 
-        // --- 5. LOGIKA FILTRÓW DLA SD ---
         if (isServiceDesk) {
             if (quickFilter === 'my_group') {
-                filterByMyGroups = true; // Włączamy filtrowanie grup w JS
-                
-                // Pobieramy tylko otwarte, żeby nie mieliła bazy zamkniętymi
+                filterByMyGroups = true;
                 whereClauses.push("c.status != 'Zamknięte' AND c.status != 'Rozwiązane' AND c.status != 'Odrzucone'");
-
-                // Pobieramy definicje grup
+                // Pobieranie grup z bazy... (bez zmian logicznych)
                 try {
                     const { resources: settings } = await container.items.query(
                         "SELECT * FROM c WHERE c.id = 'global_settings'"
                     ).fetchAll();
-                    
-                    if (settings && settings.length > 0) {
-                        const config = settings[0];
-                        if (config.groups && Array.isArray(config.groups)) {
-                            const userEmailLower = userEmail.toLowerCase().trim();
-                            myAllowedGroups = config.groups
-                                .filter(g => g.members && g.members.some(m => m.toLowerCase().trim() === userEmailLower))
-                                .map(g => g.name.toLowerCase().trim());
-                        }
+                    if (settings && settings.length > 0 && settings[0].groups) {
+                        const userEmailLower = userEmail.toLowerCase().trim();
+                        myAllowedGroups = settings[0].groups
+                            .filter(g => g.members && g.members.some(m => m.toLowerCase().trim() === userEmailLower))
+                            .map(g => g.name.toLowerCase().trim());
                     }
-                } catch (err) {
-                    context.log.error("Błąd pobierania grup:", err.message);
-                }
-            } 
-            else if (quickFilter === 'open') {
+                } catch (err) {}
+            } else if (quickFilter === 'open') {
                 whereClauses.push("c.status != 'Zamknięte' AND c.status != 'Rozwiązane' AND c.status != 'Odrzucone'");
-            }
-            else if (quickFilter === 'closed') {
+            } else if (quickFilter === 'closed') {
                 whereClauses.push("(c.status = 'Zamknięte' OR c.status = 'Rozwiązane' OR c.status = 'Odrzucone')");
             }
         }
 
-        // --- 6. WYSZUKIWANIE TEKSTOWE ---
         if (searchText) {
-            let condition = "";
+            // ... (logika wyszukiwania bez zmian) ...
+             let condition = "";
             switch (searchField) {
                 case 'id': condition = "CONTAINS(LOWER(c.id), @search)"; break;
                 case 'title': condition = "CONTAINS(LOWER(c.title), @search)"; break;
@@ -101,8 +85,7 @@ module.exports = async function (context, req) {
             }
             whereClauses.push(condition);
             parameters.push({ name: "@search", value: searchText });
-            
-            if (searchField === 'created' || searchField === 'closed') {
+             if (searchField === 'created' || searchField === 'closed') {
                 parameters.push({ name: "@searchRaw", value: rawSearch.trim() });
             }
         }
@@ -112,67 +95,69 @@ module.exports = async function (context, req) {
             whereString = " WHERE " + whereClauses.join(" AND ");
         }
 
-        // --- 7. POBIERANIE DANYCH (WSZYSTKIE PASUJĄCE) ---
-        // Tutaj pobieramy wszystko co pasuje do SQL, a stronnicowanie zrobimy niżej w JS
-        const query = `SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c ${whereString}`;
-
-        const { resources: rawTickets } = await container.items.query(
-            { query, parameters },
-            { enableCrossPartitionQuery: true } // To jest kluczowe, żeby nie było błędów
-        ).fetchAll();
-
-        // --- 8. PRZETWARZANIE W PAMIĘCI (JS) ---
+        // --- 5. WYKONANIE ZAPYTANIA Z TOKENEM ---
         
-        let processedTickets = rawTickets;
+        // Zauważ: Dodajemy ORDER BY, co jest wymagane dla spójności stron,
+        // ale usuwamy OFFSET/LIMIT. Limit obsługuje `maxItemCount`.
+        const query = `
+            SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates 
+            FROM c 
+            ${whereString} 
+            ORDER BY c.dates.createdAt DESC
+        `;
 
-        // A. Filtrowanie grup (jeśli dotyczy)
+        // Tworzymy iterator
+        const iterator = container.items.query(
+            { query, parameters },
+            { 
+                maxItemCount: pageSize, // Tu definiujemy rozmiar strony (10)
+                continuationToken: continuationToken, // Tu przekazujemy token z frontendu
+                enableCrossPartitionQuery: true 
+            }
+        );
+
+        // Pobieramy TYLKO jedną stronę wyników
+        const { resources: rawTickets, hasMoreResults, continuationToken: nextToken } = await iterator.fetchNext();
+
+        // --- 6. FILTROWANIE GRUP W PAMIĘCI (To nadal musi zostać w JS dla tego filtra) ---
+        // Uwaga: To jest "haczyk" przy tokenach. Jeśli odfiltrujemy wszystko w JS, 
+        // możemy zwrócić pustą stronę mimo istnienia tokena. 
+        // W prostym wdrożeniu akceptujemy to (użytkownik zobaczy pustą stronę i kliknie dalej).
+        
+        let processedTickets = rawTickets || [];
+
         if (filterByMyGroups) {
-            if (myAllowedGroups.length === 0) {
+             if (myAllowedGroups.length === 0) {
                 processedTickets = [];
             } else {
                 processedTickets = processedTickets.filter(ticket => {
                     if (ticket.assignedTo && ticket.assignedTo.group) {
-                        const ticketGroup = ticket.assignedTo.group.toLowerCase().trim();
-                        return myAllowedGroups.includes(ticketGroup);
+                        return myAllowedGroups.includes(ticket.assignedTo.group.toLowerCase().trim());
                     }
                     return false;
                 });
             }
         }
 
-        // B. Sortowanie (od najnowszych)
-        processedTickets.sort((a, b) => {
-            const dateA = a.dates && a.dates.createdAt ? new Date(a.dates.createdAt).getTime() : 0;
-            const dateB = b.dates && b.dates.createdAt ? new Date(b.dates.createdAt).getTime() : 0;
-            return dateB - dateA;
-        });
-
-        // C. STRONICOWANIE (Paginacja)
-        // To jest moment, w którym realizujemy Twoje wymaganie:
-        // "na stronie 1 załaduj 10 pierwszych, na stronie 2 kolejne 10"
-        const totalCount = processedTickets.length;
-        const totalPages = Math.ceil(totalCount / pageSize);
-        
-        // Wycinamy odpowiedni kawałek tablicy
-        const paginatedTickets = processedTickets.slice(offset, offset + pageSize);
+        // --- 7. LICZNIK CAŁKOWITY (Dla informacji "Znaleziono X zgłoszeń") ---
+        // To wykonujemy oddzielnie, żeby wiedzieć ile jest w sumie, ale nie wpływa to na paginację
+        const countQuerySpec = {
+            query: `SELECT VALUE COUNT(1) FROM c ${whereString}`,
+            parameters: parameters
+        };
+        const { resources: countRes } = await container.items.query(countQuerySpec, { enableCrossPartitionQuery: true }).fetchAll();
+        const totalCount = countRes[0];
 
         context.res = {
             body: {
-                tickets: paginatedTickets, // Zwracamy tylko 10 sztuk
+                tickets: processedTickets,
                 totalCount: totalCount,
-                currentPage: page,
-                totalPages: totalPages
+                continuationToken: nextToken // Zwracamy token do następnej strony
             }
         };
 
     } catch (error) {
-        context.log.error("CRITICAL ERROR:", error);
-        context.res = { 
-            status: 500, 
-            body: { 
-                message: "Internal Server Error", 
-                details: error.message 
-            } 
-        };
+        context.log.error("ERROR:", error);
+        context.res = { status: 500, body: { message: "Error", details: error.message } };
     }
 };

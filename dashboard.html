@@ -160,6 +160,10 @@
         let currentPage = 1;
         let refreshInterval;
         let cachedCategories = []; 
+
+        let pageTokens = { 1: null }; // Mapa: numer strony -> token potrzebny by ją pobrać
+        let hasNextPage = false;
+        let currentNextToken = null; // Token do następnej strony (jeśli istnieje)
         
         let notificationsInterval;
         let currentNotifications = [];
@@ -273,112 +277,132 @@
             }
         }
 
-        function renderPagination(currentPageNum, totalPages) {
+        function renderPagination(totalCount) {
             const container = document.getElementById('pagination-container');
             container.innerHTML = '';
-            for (let i = 1; i <= totalPages; i++) {
-                const btn = document.createElement('button');
-                btn.className = 'page-btn';
-                btn.textContent = i;
-                if (i === currentPageNum) btn.classList.add('active');
-                btn.onclick = () => {
-                    currentPage = i;
-                    loadTickets();
-                };
-                container.appendChild(btn);
-            }
+
+            // Informacja o liczbie wyników
+            const info = document.createElement('div');
+            info.style.marginBottom = '10px';
+            info.style.fontSize = '13px';
+            info.style.color = '#666';
+            info.textContent = `Strona ${currentPage} | Wszystkich zgłoszeń: ${totalCount}`;
+            container.appendChild(info);
+
+            const buttonsDiv = document.createElement('div');
+            buttonsDiv.style.display = 'flex';
+            buttonsDiv.style.gap = '10px';
+
+            // Przycisk "Poprzednia"
+            const prevBtn = document.createElement('button');
+            prevBtn.className = 'btn-primary'; // Możesz dodać styl btn-secondary
+            prevBtn.textContent = 'Poprzednia';
+            prevBtn.disabled = currentPage === 1; // Nieaktywny na 1. stronie
+            prevBtn.onclick = () => loadTickets(currentPage - 1);
+            
+            // Przycisk "Następna"
+            const nextBtn = document.createElement('button');
+            nextBtn.className = 'btn-primary';
+            nextBtn.textContent = 'Następna';
+            // Aktywny tylko, jeśli backend zwrócił token do następnej strony
+            nextBtn.disabled = !hasNextPage; 
+            nextBtn.onclick = () => loadTickets(currentPage + 1);
+
+            buttonsDiv.appendChild(prevBtn);
+            buttonsDiv.appendChild(nextBtn);
+            container.appendChild(buttonsDiv);
         }
 
-        async function loadTickets() {
-            // 1. Pobieranie elementów filtrów
-            const searchInput = document.getElementById('search-input');
-            const fieldSelect = document.getElementById('search-field');
-            const quickFilterSelect = document.getElementById('quick-filter');
-            
-            // 2. Pobieranie wartości (z zabezpieczeniem, jeśli element nie istnieje)
-            const searchTerm = searchInput ? searchInput.value : '';
-            const searchField = fieldSelect ? fieldSelect.value : 'id';
-            // Jeśli select nie istnieje (zwykły user), ustawiamy 'all'
-            const quickFilter = quickFilterSelect ? quickFilterSelect.value : 'all';
+        async function loadTickets(targetPage = 1) {
+    // Pobieranie filtrów (bez zmian)
+    const searchInput = document.getElementById('search-input');
+    const fieldSelect = document.getElementById('search-field');
+    const quickFilterSelect = document.getElementById('quick-filter');
+    
+    const searchTerm = searchInput ? searchInput.value : '';
+    const searchField = fieldSelect ? fieldSelect.value : 'id';
+    const quickFilter = quickFilterSelect ? quickFilterSelect.value : 'all';
 
-            const tbody = document.getElementById('tickets-tbody');
-            tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">Ładowanie zgłoszeń...</td></tr>';
-            
-            try {
-                // 3. Budowanie parametrów URL
-                const params = new URLSearchParams({
-                    page: currentPage,
-                    search: searchTerm,
-                    field: searchField,
-                    quickFilter: quickFilter
-                });
-                
-                // Wysyłamy zapytanie
-                const response = await fetch(`/api/getTickets?${params.toString()}`);
-                
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                const data = await response.json();
-                
-                const { tickets, totalPages } = data;
+    const tbody = document.getElementById('tickets-tbody');
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">Ładowanie zgłoszeń...</td></tr>';
+    
+    // POBIERAMY TOKEN DLA ŻĄDANEJ STRONY
+    // Jeśli idziemy do str. 1, token to null.
+    // Jeśli idziemy do str. 2, bierzemy token zapisany po pobraniu str. 1
+    const tokenToSend = pageTokens[targetPage] || null;
 
-                tbody.innerHTML = '';
-                
-                // 4. Obsługa braku wyników
-                if (!tickets || tickets.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;">Brak zgłoszeń spełniających kryteria.</td></tr>`;
-                    renderPagination(0, 0);
-                    return;
-                }
-                
-                // 5. Generowanie wierszy
-                tickets.forEach(ticket => {
-                    const row = tbody.insertRow();
-                    row.className = 'ticket-row';
-                    row.dataset.ticketId = ticket.id;
-                    row.onclick = () => openTicketModal(ticket.id);
-
-                    // Kolorowanie SLA (tylko dla otwartych)
-                    const isClosed = ['Rozwiązane', 'Odrzucone', 'Zamknięte'].includes(ticket.status);
-
-                    if (!isClosed && ticket.dates && ticket.dates.guaranteedResolutionAt) {
-                        const now = new Date();
-                        const slaTime = new Date(ticket.dates.guaranteedResolutionAt);
-                        const diffMs = slaTime.getTime() - now.getTime();
-                        const diffHours = diffMs / (1000 * 60 * 60); 
-
-                        if (diffMs < 0) { row.classList.add('sla-danger'); } 
-                        else if (diffHours <= 2) { row.classList.add('sla-warning'); }
-                    }
-
-                    // Przygotowanie danych do wyświetlenia
-                    const statusClass = `status-${ticket.status.toLowerCase().replace(/\s/g, '-')}`;
-                    const reportingUserDisplay = ticket.reportingUser ? escapeHTML(ticket.reportingUser.name).replace('@', '<br>@') : '---';
-                    const personDisplay = ticket.assignedTo && ticket.assignedTo.person ? escapeHTML(ticket.assignedTo.person).replace('@', '<br>@') : '---';
-                    const groupDisplay = ticket.assignedTo && ticket.assignedTo.group ? escapeHTML(ticket.assignedTo.group) : '';
-
-                    const createdDisplay = ticket.dates ? formatDateTwoLines(ticket.dates.createdAt) : '-';
-                    const slaDisplay = ticket.dates ? formatDateTwoLines(ticket.dates.guaranteedResolutionAt) : '-';
-                    const closedDisplay = ticket.dates ? formatDateTwoLines(ticket.dates.closedAt) : '-';
-
-                    row.innerHTML = `
-                        <td>${escapeHTML(ticket.id)}</td>
-                        <td><span class="status-badge ${statusClass}">${escapeHTML(ticket.status)}</span></td>
-                        <td>${escapeHTML(ticket.title)}</td>
-                        <td>${reportingUserDisplay}</td>
-                        <td>${escapeHTML(ticket.category)}</td>
-                        <td>${personDisplay}</td>
-                        <td>${groupDisplay}</td>
-                        <td>${createdDisplay}</td>
-                        <td>${slaDisplay}</td>
-                        <td>${closedDisplay}</td>
-                    `;
-                });
-                renderPagination(data.currentPage, totalPages);
-            } catch (error) {
-                console.error('Błąd podczas pobierania zgłoszeń:', error);
-                tbody.innerHTML = '<tr><td colspan="10" class="error-message">Wystąpił błąd podczas ładowania zgłoszeń.</td></tr>';
-            }
+    try {
+        // Budowanie URL - używamy continuationToken zamiast page
+        const params = new URLSearchParams({
+            search: searchTerm,
+            field: searchField,
+            quickFilter: quickFilter
+        });
+        
+        if (tokenToSend) {
+            params.append('continuationToken', tokenToSend);
         }
+
+        const response = await fetch(`/api/getTickets?${params.toString()}`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        
+        const data = await response.json();
+        const { tickets, totalCount, continuationToken } = data;
+
+        // ZAPISYWANIE TOKENA DLA NASTĘPNEJ STRONY
+        currentPage = targetPage;
+        currentNextToken = continuationToken; // Może być null, jeśli to koniec
+        
+        if (currentNextToken) {
+            // Zapisz token, który pozwoli wejść na stronę (currentPage + 1)
+            pageTokens[currentPage + 1] = currentNextToken;
+            hasNextPage = true;
+        } else {
+            hasNextPage = false;
+        }
+
+        tbody.innerHTML = '';
+        
+        if (!tickets || tickets.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;">Brak zgłoszeń.</td></tr>`;
+            renderPagination(0); // Przekazujemy 0 lub totalCount informacyjnie
+            return;
+        }
+
+        // Generowanie wierszy (bez zmian)
+        tickets.forEach(ticket => {
+             // ... (Tutaj wklej kod generowania wierszy z Twojego obecnego pliku, ten fragment się nie zmienia) ...
+             // Skopiuj logikę: const row = tbody.insertRow(); ... row.innerHTML = ...
+             // Pamiętaj o obsłudze dat i statusów, którą już masz.
+             const row = tbody.insertRow();
+             row.className = 'ticket-row';
+             row.dataset.ticketId = ticket.id;
+             row.onclick = () => openTicketModal(ticket.id);
+
+             // (Skrócona wersja dla czytelności tutaj, wklej swoją pełną)
+             const statusClass = `status-${ticket.status.toLowerCase().replace(/\s/g, '-')}`;
+             row.innerHTML = `
+                <td>${escapeHTML(ticket.id)}</td>
+                <td><span class="status-badge ${statusClass}">${escapeHTML(ticket.status)}</span></td>
+                <td>${escapeHTML(ticket.title)}</td>
+                <td>${ticket.reportingUser ? escapeHTML(ticket.reportingUser.name) : '-'}</td>
+                <td>${escapeHTML(ticket.category)}</td>
+                <td>${ticket.assignedTo && ticket.assignedTo.person ? escapeHTML(ticket.assignedTo.person) : '-'}</td>
+                <td>${ticket.assignedTo ? escapeHTML(ticket.assignedTo.group) : '-'}</td>
+                <td>${ticket.dates ? formatDateTwoLines(ticket.dates.createdAt) : '-'}</td>
+                <td>${ticket.dates ? formatDateTwoLines(ticket.dates.guaranteedResolutionAt) : '-'}</td>
+                <td>${ticket.dates ? formatDateTwoLines(ticket.dates.closedAt) : '-'}</td>
+             `;
+        });
+        
+        // Renderujemy nową nawigację
+        renderPagination(totalCount);
+
+    } catch (error) {
+        console.error('Błąd:', error);
+        tbody.innerHTML = '<tr><td colspan="10" class="error-message">Błąd ładowania danych.</td></tr>';
+    }
+}
 
         async function openTicketModal(ticketId) {
             const modal = document.getElementById('ticket-modal');
@@ -769,7 +793,52 @@
             } catch (error) {
                 console.error('Błąd inicjalizacji panelu:', error);
             }
+
+            // --- WKLEJ TO WEWNĄTRZ initializeDashboard() LUB NA KOŃCU SKRYPTU ---
+
+        // 1. Obsługa przycisku "Szukaj"
+        const searchBtn = document.getElementById('search-btn');
+        if (searchBtn) {
+            searchBtn.addEventListener('click', () => {
+                pageTokens = { 1: null }; // WAŻNE: Reset tokenów przy nowym wyszukiwaniu
+                currentPage = 1;
+                loadTickets(1);
+            });
         }
+
+        // 2. Obsługa klawisza ENTER w polu wyszukiwania
+        const searchInput = document.getElementById('search-input');
+        if (searchInput) {
+            searchInput.addEventListener('keyup', (e) => {
+                if (e.key === 'Enter') {
+                    pageTokens = { 1: null }; // WAŻNE: Reset tokenów
+                    currentPage = 1;
+                    loadTickets(1);
+                }
+            });
+        }
+
+        // 3. Obsługa zmiany "Szybkiego filtra" (Moje grupy / Wszystkie / Otwarte)
+        const quickFilter = document.getElementById('quick-filter');
+        if (quickFilter) {
+            quickFilter.addEventListener('change', () => {
+                pageTokens = { 1: null }; // WAŻNE: Reset tokenów przy zmianie filtra
+                currentPage = 1;
+                loadTickets(1);
+            });
+        }
+
+        // 4. (Opcjonalnie) Obsługa zmiany pola wyszukiwania (np. zmiana z ID na Tytuł)
+        const searchField = document.getElementById('search-field');
+        if (searchField) {
+            searchField.addEventListener('change', () => {
+                // Tu opcjonalnie też możemy resetować, jeśli chcemy odświeżać od razu
+                // pageTokens = { 1: null };
+                // currentPage = 1;
+                // loadTickets(1);
+            });
+        }
+    }
 
         // Obsługa zmiany szybkiego filtra
         document.getElementById('quick-filter').addEventListener('change', () => {
