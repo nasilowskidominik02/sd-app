@@ -790,10 +790,9 @@
         const searchBtn = document.getElementById('search-btn');
         if (searchBtn) {
             searchBtn.addEventListener('click', () => {
-                pageTokens = { 1: null }; // WAŻNE: Reset tokenów przy nowym wyszukiwaniu
-                currentPage = 1;
+                currentPage = 1; // Tylko reset strony, bez usuwania tokenów
                 loadTickets(1);
-            });
+});
         }
 
         // 2. Obsługa klawisza ENTER w polu wyszukiwania
