@@ -133,11 +133,9 @@ module.exports = async function (context, req) {
         };
 
         // B. Zapytanie o dane (Paginacja SQL)
-        // Dodajemy parametry limit i offset
-        const queryParameters = [...parameters, 
-            { name: "@offset", value: offset }, 
-            { name: "@limit", value: pageSize }
-        ];
+        // POPRAWKA: Wstawiamy offset i limit bezpośrednio do stringa SQL.
+        // Parametryzacja (@offset) w tym miejscu często powoduje błąd "Input values invalid".
+        // Ponieważ offset i pageSize są liczbami obliczanymi przez nas, jest to bezpieczne.
 
         const dataQuerySpec = {
             query: `
@@ -145,12 +143,12 @@ module.exports = async function (context, req) {
                 FROM c 
                 ${whereString} 
                 ORDER BY c.dates.createdAt DESC 
-                OFFSET @offset LIMIT @limit
+                OFFSET ${offset} LIMIT ${pageSize}
             `,
-            parameters: queryParameters
+            parameters: parameters // Używamy podstawowych parametrów (bez offset/limit)
         };
 
-        // Wykonujemy zapytania równolegle dla lepszej wydajności
+        // Wykonujemy zapytania równolegle
         const [countResponse, dataResponse] = await Promise.all([
             container.items.query(countQuerySpec).fetchAll(),
             container.items.query(dataQuerySpec).fetchAll()
