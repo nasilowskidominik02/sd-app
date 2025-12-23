@@ -450,7 +450,6 @@
                 attachmentsHTML = '<span style="color: #999; font-size: 14px;">Brak załączników.</span>';
             }
 
-            // Konstrukcja HTML z ZAKŁADKAMI
             modalBody.innerHTML = `
                 <aside id="modal-actions-panel" class="modal-actions-panel hidden">
                     <h4>Akcje</h4>
@@ -465,7 +464,7 @@
                     </div>
                 </aside>
 
-               <div class="modal-details-panel">
+                <div class="modal-details-panel">
                     
                     <div class="modal-tabs">
                         <button class="tab-btn active" onclick="switchTab('tab-details')" data-target="tab-details">Szczegóły zgłoszenia</button>
@@ -488,8 +487,7 @@
 
                     </div>
 
-                    <div id="tab-history" class="tab-content">...</div>
-                </div>
+                    <div id="tab-history" class="tab-content">
                         <div id="comments-list" class="comments-list"></div>
                         
                         <form id="comment-form" class="comment-form hidden">
