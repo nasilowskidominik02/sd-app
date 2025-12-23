@@ -533,3 +533,87 @@ a:hover {
         width: 100% !important;
     }
 }
+
+/* Kontener zakładek nad treścią */
+.modal-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--gray-border);
+    background-color: var(--light-gray-bg);
+    padding: 0 16px;
+    flex-shrink: 0; /* Nie zgniataj paska zakładek */
+}
+
+.tab-btn {
+    padding: 12px 20px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-light);
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s;
+}
+
+.tab-btn:hover {
+    color: var(--primary-blue);
+    background-color: rgba(59, 130, 246, 0.05);
+}
+
+.tab-btn.active {
+    color: var(--primary-blue);
+    border-bottom-color: var(--primary-blue);
+    font-weight: 600;
+}
+
+/* Kontener treści w zakładce */
+.tab-content {
+    display: none; /* Domyślnie ukryte */
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden; /* Ważne: to wnętrze ma scrollować, a nie cały modal */
+    padding: 24px;
+}
+
+.tab-content.active {
+    display: flex;
+}
+
+/* Specyficzne style dla zakładki Historii (żeby wyglądała jak czat) */
+#tab-history.active {
+    padding: 0; /* Reset paddingu dla historii, żeby wykorzystać całą przestrzeń */
+    background-color: #fff;
+}
+
+/* Lista komentarzy rozciąga się na dostępną przestrzeń */
+.comments-list {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    background-color: #f9fafb; /* Lekkie tło pod czatem */
+}
+
+/* Formularz przyklejony do dołu */
+.comment-form {
+    flex-shrink: 0;
+    padding: 16px;
+    border-top: 1px solid var(--gray-border);
+    background-color: var(--white);
+}
+
+/* Poprawka dla kontenera detali, żeby scrollował się niezależnie */
+#tab-details {
+    overflow-y: auto;
+}
+
+/* Modyfikacja istniejącej klasy .modal-details-panel */
+.modal-details-panel {
+    padding: 0 !important; /* Usuwamy padding rodzica, bo zakładki go mają */
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden; /* Blokujemy scroll rodzica */
+}
