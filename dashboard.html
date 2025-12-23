@@ -892,6 +892,30 @@
                 // loadTickets(1);
             });
         }
+        function switchTab(tabId) {
+            // 1. Usuń klasę 'active' ze wszystkich przycisków i treści
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+            // 2. Dodaj klasę 'active' do klikniętego przycisku
+            // Szukamy przycisku, który wskazuje na ten tabId
+            const activeBtn = document.querySelector(`.tab-btn[data-target="${tabId}"]`);
+            if (activeBtn) {
+                activeBtn.classList.add('active');
+            }
+
+            // 3. Pokaż wybraną treść
+            const activeContent = document.getElementById(tabId);
+            if (activeContent) {
+                activeContent.classList.add('active');
+            }
+
+            // 4. (Opcjonalnie) Przewiń historię na dół, jeśli wybrano zakładkę historii
+            if (tabId === 'tab-history') {
+                const commentsList = document.getElementById('comments-list');
+                if(commentsList) commentsList.scrollTop = commentsList.scrollHeight;
+            }
+        }
     }
 
         // Obsługa zmiany szybkiego filtra
