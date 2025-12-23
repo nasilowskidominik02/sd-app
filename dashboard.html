@@ -606,58 +606,66 @@
             
             const statusEl = document.getElementById('modal-status');
             statusEl.textContent = 'Zapisywanie...';
-            statusEl.className = 'modal-status'; // Reset
+            statusEl.classList.remove('hidden', 'error', 'success');
+
+            // DEBUGOWANIE
+            console.log("AKTUALNY ETAG:", currentTicketData._etag);
+            if (!currentTicketData._etag) {
+                alert("BŁĄD KRYTYCZNY: Frontend nie ma pola _etag. Sprawdź Krok 1 (api/getTicket).");
+                return;
+            }
 
             try {
-                // DEBUG: Sprawdzamy czy mamy etag
-                console.log("Wysyłam ETAG:", currentTicketData._etag); 
-
                 const response = await fetch('/api/updateTicket', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         ticketId: currentTicketData.id,
                         changes: pendingChanges,
-                        etag: currentTicketData._etag // NOWOŚĆ: To jest kluczowe!
+                        etag: currentTicketData._etag // <--- TO MUSI BYĆ
                     })
                 });
 
-                // --- OBSŁUGA BŁĘDU 412 (KONFLIKT) ---
+                // OBSŁUGA KONFLIKTU (412)
                 if (response.status === 412) {
-                    statusEl.textContent = '⛔ BŁĄD: Ktoś zmodyfikował to zgłoszenie w międzyczasie! Odświeżam...';
+                    statusEl.textContent = '⛔ BŁĄD: Ktoś odpisał w międzyczasie! Odświeżam...';
                     statusEl.classList.add('error');
+                    alert("UWAGA: Ktoś inny zmienił to zgłoszenie w trakcie Twojej pracy.\nStrona zostanie odświeżona, a Twoje zmiany NIE zostały zapisane.");
                     
-                    // Czekamy 3 sekundy i przeładowujemy
                     setTimeout(() => {
-                        openTicketModal(currentTicketData.id); 
-                    }, 3000);
-                    return; 
+                        openTicketModal(currentTicketData.id); // Przeładuj
+                    }, 1000);
+                    return;
                 }
-                // -------------------------------------
+                
+                // OBSŁUGA BRAKU ETAGA NA BACKENDZIE (428)
+                if (response.status === 428) {
+                    statusEl.textContent = 'Błąd wersji danych. Odświeżam...';
+                    statusEl.classList.add('error');
+                    openTicketModal(currentTicketData.id);
+                    return;
+                }
 
                 if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+                    throw new Error(`HTTP ${response.status}`);
                 }
                 
                 const updatedTicket = await response.json();
-                statusEl.textContent = 'Zapisano pomyślnie!';
+                statusEl.textContent = 'Zapisano!';
                 statusEl.classList.add('success');
                 
-                // Aktualizujemy dane lokalne i ETAG
+                // WAŻNE: Aktualizujemy lokalny ETAG po udanym zapisie!
                 currentTicketData = updatedTicket;
                 pendingChanges = {}; 
                 populateModal(currentTicketData); 
 
-                // Scroll w dół jeśli jesteśmy w historii
+                // Przewiń komentarze
                 if(document.getElementById('tab-history').classList.contains('active')) {
                      const list = document.getElementById('comments-list');
                      if(list) list.scrollTop = list.scrollHeight;
                 }
 
-                setTimeout(() => {
-                    statusEl.classList.add('hidden');
-                }, 2000);
+                setTimeout(() => { statusEl.classList.add('hidden'); }, 2000);
 
             } catch (error) {
                  statusEl.textContent = 'Błąd: ' + error.message;
