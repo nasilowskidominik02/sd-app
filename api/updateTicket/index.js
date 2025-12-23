@@ -102,8 +102,14 @@ module.exports = async function (context, req) {
     }
 
     // Jeśli frontend nie przysłał etaga (np. stara wersja kodu), wymuszamy refresh
+
+    // WALIDACJA ETAGU
+    // Jeśli nie ma etaga, zwracamy 400 lub 428 (Precondition Required)
     if (!etag) {
-        return { status: 428, body: { message: "Wymagany nagłówek ETag (odśwież stronę)." } };
+        return { 
+            status: 428, // 428 Precondition Required
+            body: { message: "Błąd spójności danych: Brak nagłówka ETag. Odśwież stronę." } 
+        };
     }
 
     try {
