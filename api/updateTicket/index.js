@@ -5,7 +5,8 @@ const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
 const database = client.database("ServiceDeskDB");
 const ticketsContainer = database.container("Tickets");
 
-// Funkcja pomocnicza do obliczania SLA
+// --- FUNKCJE POMOCNICZE (SLA, Powiadomienia) ---
+
 function calculateAdvancedSLA(startDate, hoursToAdd, workConfig) {
     const startHour = workConfig?.startHour || 8;
     const endHour = workConfig?.endHour || 16;
@@ -82,6 +83,8 @@ function addSystemComment(ticket, text, clientPrincipal) {
     });
 }
 
+// --- GŁÓWNA FUNKCJA ---
+
 module.exports = async function (context, req) {
     const header = req.headers['x-ms-client-principal'];
     if (!header) return { status: 401, body: { message: "Brak uwierzytelnienia." } };
@@ -94,19 +97,23 @@ module.exports = async function (context, req) {
         return { status: 403, body: { message: "Brak uprawnień." } };
     }
 
-    // --- NOWOŚĆ: Pobieramy ETAG ---
     const { ticketId, changes, etag } = req.body;
     
+    // 1. Walidacja danych wejściowych
     if (!ticketId || !changes) {
-        return { status: 400, body: { message: "Brak wymaganych danych." } };
+        return { status: 400, body: { message: "Brak wymaganych danych (ticketId, changes)." } };
     }
 
-    // --- NOWOŚĆ: Walidacja ETAG ---
+    // 2. Walidacja ETAG (Kluczowe dla blokady!)
     if (!etag) {
-        return { status: 428, body: { message: "Błąd spójności: Brak nagłówka ETag (odśwież stronę)." } };
+        return { 
+            status: 428, // 428 Precondition Required
+            body: { message: "Błąd spójności: Brak nagłówka ETag. Odśwież stronę." } 
+        };
     }
 
     try {
+        // 3. Pobranie aktualnego stanu
         const querySpec = {
             query: "SELECT * FROM c WHERE c.id = @ticketId",
             parameters: [{ name: "@ticketId", value: ticketId }]
@@ -119,7 +126,7 @@ module.exports = async function (context, req) {
         const reportingUserEmail = ticket.reportingUser.email;
         const isSelfUpdate = reportingUserEmail.toLowerCase() === clientPrincipal.userDetails.toLowerCase();
 
-        // --- Logika Biznesowa ---
+        // --- LOGIKA BIZNESOWA (Zmiany w obiekcie ticket w pamięci) ---
 
         if (ticket.status === 'Zamknięte') {
             const isReopening = changes.status && changes.status === 'Otwarte';
@@ -132,6 +139,7 @@ module.exports = async function (context, req) {
                 return { status: 403, body: { message: "Błąd: Zgłoszenie jest zamknięte." } };
             }
         } else {
+            // Zmiana statusu
             if (changes.status && ticket.status !== changes.status) {
                 if (['Rozwiązane', 'Odrzucone'].includes(changes.status)) {
                     addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "Zamknięte".`, clientPrincipal);
@@ -139,6 +147,7 @@ module.exports = async function (context, req) {
                     ticket.dates.closedAt = new Date().toISOString();
                     if (!ticket.assignedTo.person) ticket.assignedTo.person = clientPrincipal.userDetails;
 
+                    // Auto-przypisanie grupy przy zamknięciu
                     try {
                         const { resources: sData } = await ticketsContainer.items.query("SELECT * FROM c WHERE c.id = 'global_settings'").fetchAll();
                         if (sData.length > 0 && sData[0].groups) {
@@ -161,6 +170,7 @@ module.exports = async function (context, req) {
                 }
             }
 
+            // Zmiana przypisania
             if (changes.assignedTo && changes.assignedTo.person && ticket.assignedTo.person !== changes.assignedTo.person) {
                 addSystemComment(ticket, `Przypisano do: ${changes.assignedTo.person}.`, clientPrincipal);
                 ticket.assignedTo.person = changes.assignedTo.person;
@@ -170,6 +180,7 @@ module.exports = async function (context, req) {
                 }
             }
 
+            // Zmiana kategorii (i SLA)
             if (changes.category && ticket.category !== changes.category) {
                 const { resources: sData } = await ticketsContainer.items.query("SELECT * FROM c WHERE c.id = 'global_settings'").fetchAll();
                 const globalSettings = sData.length > 0 ? sData[0] : null;
@@ -203,6 +214,7 @@ module.exports = async function (context, req) {
                 if (ticket.status === 'Nieprzeczytane') ticket.status = 'Otwarte';
             }
 
+            // Dodawanie komentarza
             if (changes.newComment) {
                  if (!ticket.comments) ticket.comments = [];
                  ticket.comments.push({
@@ -215,46 +227,59 @@ module.exports = async function (context, req) {
             }
         }
         
-        // --- SEKCJA ZAPISU Z BLOKADĄ (OPTIMISTIC CONCURRENCY) ---
+        // --- 4. PRZYGOTOWANIE DO ZAPISU (CZYSZCZENIE OBIEKTU) ---
+        // Usuwamy pola systemowe Cosmos DB. Jeśli tego nie zrobimy,
+        // replace może zgłosić błąd, bo próbujemy wstawić stare metadane.
+        // ETAG sprawdzamy w options, nie w body.
+        delete ticket._rid;
+        delete ticket._self;
+        delete ticket._etag; 
+        delete ticket._attachments;
+        delete ticket._ts;
+
+        // --- 5. ZAPIS Z BLOKADĄ (OPTIMISTIC CONCURRENCY) ---
         
-        // Sytuacja 1: Zmiana kategorii (zmiana Partition Key)
-        if (ticket.category !== originalCategory) {
+        // Sytuacja A: Zmiana kategorii (zmiana Partition Key)
+        if (changes.category && changes.category !== originalCategory) {
             try {
-                // Usuń stary TYLKO jeśli ETag się zgadza
+                // Krok 1: Usuń stary dokument TYLKO jeśli ETag się zgadza
                 await ticketsContainer.item(ticketId, originalCategory).delete({ ifMatch: etag });
                 
-                // Utwórz nowy
+                // Krok 2: Utwórz nowy (już z nową kategorią w body)
                 const { resource: createdItem } = await ticketsContainer.items.create(ticket);
                 context.res = { body: createdItem };
 
-            } catch (deleteErr) {
-                if (deleteErr.code === 412) {
+            } catch (err) {
+                if (err.code === 412) {
+                    // Konflikt przy usuwaniu = ktoś zmienił oryginał
                     context.res = { status: 412, body: { message: "Konflikt edycji: Ktoś inny zmodyfikował to zgłoszenie." } };
                 } else {
-                    throw deleteErr;
+                    throw err;
                 }
             }
-        } else {
-            // Sytuacja 2: Standardowa aktualizacja
+        } 
+        // Sytuacja B: Standardowa aktualizacja (w tej samej partycji)
+        else {
             try {
-                // Używamy replace + ifMatch zamiast upsert
+                // Używamy .replace() z opcją ifMatch
                 const { resource: updatedItem } = await ticketsContainer
                     .item(ticketId, ticket.category)
                     .replace(ticket, { ifMatch: etag });
 
                 context.res = { body: updatedItem };
 
-            } catch (updateErr) {
-                if (updateErr.code === 412) {
+            } catch (err) {
+                if (err.code === 412) {
+                    // Konflikt przy replace = etagi się nie zgadzają
                     context.res = { status: 412, body: { message: "Konflikt edycji: Ktoś inny zmodyfikował to zgłoszenie." } };
                 } else {
-                    throw updateErr;
+                    throw err;
                 }
             }
         }
 
     } catch (error) {
         context.log.error("Error updateTicket:", error);
-        context.res = { status: 500, body: { message: "Wystąpił błąd serwera." } };
+        context.res = { status: 500, body: { message: "Wystąpił błąd serwera: " + error.message } };
     }
 };
