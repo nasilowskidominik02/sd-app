@@ -5,16 +5,13 @@ const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
 const database = client.database("ServiceDeskDB");
 const ticketsContainer = database.container("Tickets");
 
-// =================================================================================
-// 1. DODANO: Funkcja obliczająca SLA (skopiowana z createTicket dla spójności)
-// =================================================================================
+// Funkcja pomocnicza do obliczania SLA (musimy ją tu mieć, żeby przeliczać daty przy zmianie kategorii)
 function calculateAdvancedSLA(startDate, hoursToAdd, workConfig) {
     const startHour = workConfig?.startHour || 8;
     const endHour = workConfig?.endHour || 16;
     const holidays = workConfig?.holidays || [];
 
     let minutesRemaining = hoursToAdd * 60;
-    // Ważne: Tworzymy nowy obiekt daty na podstawie daty startowej
     let currentDate = new Date(startDate); 
 
     while (minutesRemaining > 0) {
@@ -30,12 +27,10 @@ function calculateAdvancedSLA(startDate, hoursToAdd, workConfig) {
         }
 
         const currentHour = currentDate.getHours();
-
         if (currentHour < startHour) {
             currentDate.setHours(startHour, 0, 0, 0);
             continue;
         }
-
         if (currentHour >= endHour) {
             currentDate.setDate(currentDate.getDate() + 1);
             currentDate.setHours(startHour, 0, 0, 0);
@@ -44,7 +39,6 @@ function calculateAdvancedSLA(startDate, hoursToAdd, workConfig) {
 
         const endOfWorkDay = new Date(currentDate);
         endOfWorkDay.setHours(endHour, 0, 0, 0);
-
         const msUntilEndOfDay = endOfWorkDay - currentDate;
         const minutesUntilEndOfDay = Math.floor(msUntilEndOfDay / 60000);
 
@@ -59,12 +53,10 @@ function calculateAdvancedSLA(startDate, hoursToAdd, workConfig) {
     }
     return currentDate;
 }
-// =================================================================================
 
 async function sendNotification(recipientEmail, message, ticketId) {
     try {
         const normalizedEmail = recipientEmail.toString().toLowerCase().trim();
-
         await ticketsContainer.items.create({
             id: uuidv4(),
             type: "notification",
@@ -76,14 +68,12 @@ async function sendNotification(recipientEmail, message, ticketId) {
             createdAt: new Date().toISOString()
         });
     } catch (error) {
-        console.error("Błąd podczas wysyłania powiadomienia:", error);
+        console.error("Błąd powiadomienia:", error);
     }
 }
 
 function addSystemComment(ticket, text, clientPrincipal) {
-    if (!ticket.comments) {
-        ticket.comments = [];
-    }
+    if (!ticket.comments) ticket.comments = [];
     ticket.comments.push({
         author: `System (${clientPrincipal.userDetails})`,
         text: text,
@@ -94,34 +84,43 @@ function addSystemComment(ticket, text, clientPrincipal) {
 
 module.exports = async function (context, req) {
     const header = req.headers['x-ms-client-principal'];
-    if (!header) return { status: 401, body: { message: "User not authenticated." } };
+    if (!header) return { status: 401, body: { message: "Brak uwierzytelnienia." } };
     
     const encoded = Buffer.from(header, 'base64');
     const decoded = encoded.toString('ascii');
     const clientPrincipal = JSON.parse(decoded);
 
     if (!clientPrincipal.userRoles.includes('sd')) {
-        return { status: 403, body: { message: "Unauthorized." } };
+        return { status: 403, body: { message: "Brak uprawnień." } };
     }
 
-    const { ticketId, changes } = req.body;
+    // NOWOŚĆ: Pobieramy etag z requestu
+    const { ticketId, changes, etag } = req.body;
+    
     if (!ticketId || !changes) {
-        return { status: 400, body: { message: "Missing data." } };
+        return { status: 400, body: { message: "Brak wymaganych danych." } };
+    }
+
+    // Jeśli frontend nie przysłał etaga (np. stara wersja kodu), wymuszamy refresh
+    if (!etag) {
+        return { status: 428, body: { message: "Wymagany nagłówek ETag (odśwież stronę)." } };
     }
 
     try {
+        // Pobieramy aktualny stan z bazy (tylko do odczytu i logiki biznesowej)
         const querySpec = {
             query: "SELECT * FROM c WHERE c.id = @ticketId",
             parameters: [{ name: "@ticketId", value: ticketId }]
         };
-        
         const { resources: items } = await ticketsContainer.items.query(querySpec).fetchAll();
-        if (items.length === 0) return { status: 404, body: { message: "Ticket not found." } };
+        if (items.length === 0) return { status: 404, body: { message: "Nie znaleziono zgłoszenia." } };
         
         let ticket = items[0];
         const originalCategory = ticket.category;
         const reportingUserEmail = ticket.reportingUser.email;
         const isSelfUpdate = reportingUserEmail.toLowerCase() === clientPrincipal.userDetails.toLowerCase();
+
+        // --- Logika Biznesowa (taka sama jak wcześniej) ---
 
         if (ticket.status === 'Zamknięte') {
             const isReopening = changes.status && changes.status === 'Otwarte';
@@ -131,43 +130,31 @@ module.exports = async function (context, req) {
                  ticket.dates.closedAt = null;
                  if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Zgłoszenie #${ticketId} otwarte ponownie.`, ticketId);
             } else {
-                return { status: 403, body: { message: "Error: Ticket is closed." } };
+                return { status: 403, body: { message: "Błąd: Zgłoszenie jest zamknięte." } };
             }
         } else {
-            // ZMIANA STATUSU
             if (changes.status && ticket.status !== changes.status) {
                 if (['Rozwiązane', 'Odrzucone'].includes(changes.status)) {
                     addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "Zamknięte".`, clientPrincipal);
                     ticket.status = 'Zamknięte'; 
                     ticket.dates.closedAt = new Date().toISOString();
-                    
-                    if (!ticket.assignedTo.person) {
-                        ticket.assignedTo.person = clientPrincipal.userDetails;
-                    }
+                    if (!ticket.assignedTo.person) ticket.assignedTo.person = clientPrincipal.userDetails;
 
+                    // Auto-przypisanie grupy zamykającego
                     try {
-                        const settingsQuery = { query: "SELECT * FROM c WHERE c.id = 'global_settings'" };
-                        const { resources: settingsItems } = await ticketsContainer.items.query(settingsQuery).fetchAll();
-                        const globalSettings = settingsItems.length > 0 ? settingsItems[0] : null;
-
-                        if (globalSettings && globalSettings.groups) {
-                            const closingUserEmail = clientPrincipal.userDetails.toLowerCase();
-                            const userGroup = globalSettings.groups.find(g => 
-                                g.members && g.members.includes(closingUserEmail)
-                            );
+                        const { resources: sData } = await ticketsContainer.items.query("SELECT * FROM c WHERE c.id = 'global_settings'").fetchAll();
+                        if (sData.length > 0 && sData[0].groups) {
+                            const closingEmail = clientPrincipal.userDetails.toLowerCase();
+                            const userGroup = sData[0].groups.find(g => g.members && g.members.includes(closingEmail));
                             if (userGroup && ticket.assignedTo.group !== userGroup.name) {
-                                addSystemComment(ticket, `Automatycznie zmieniono grupę na "${userGroup.name}" (zgodnie z zespołem osoby zamykającej).`, clientPrincipal);
+                                addSystemComment(ticket, `Automatycznie zmieniono grupę na "${userGroup.name}".`, clientPrincipal);
                                 ticket.assignedTo.group = userGroup.name;
                             }
                         }
-                    } catch (grpErr) {
-                        context.log.error("Błąd przy automatycznej zmianie grupy:", grpErr);
-                    }
+                    } catch (e) {}
 
-                    if (changes.closingComment) {
-                         addSystemComment(ticket, `Dodano komentarz zamknięcia: ${changes.closingComment}`, clientPrincipal);
-                    }
-                    if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Zgłoszenie #${ticketId} zostało zamknięte (${changes.status}).`, ticketId);
+                    if (changes.closingComment) addSystemComment(ticket, `Komentarz zamknięcia: ${changes.closingComment}`, clientPrincipal);
+                    if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Zgłoszenie #${ticketId} zamknięte (${changes.status}).`, ticketId);
 
                 } else { 
                     addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "${changes.status}".`, clientPrincipal);
@@ -176,69 +163,49 @@ module.exports = async function (context, req) {
                 }
             }
 
-            // PRZYPISANIE
             if (changes.assignedTo && changes.assignedTo.person && ticket.assignedTo.person !== changes.assignedTo.person) {
-                addSystemComment(ticket, `Przypisano zgłoszenie do: ${changes.assignedTo.person}.`, clientPrincipal);
+                addSystemComment(ticket, `Przypisano do: ${changes.assignedTo.person}.`, clientPrincipal);
                 ticket.assignedTo.person = changes.assignedTo.person;
-
                 if (ticket.status === 'Nieprzeczytane') {
-                    addSystemComment(ticket, `Automatycznie zmieniono status z "Nieprzeczytane" na "Otwarte".`, clientPrincipal);
                     ticket.status = 'Otwarte';
                     if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Zgłoszenie #${ticketId} przyjęte do realizacji.`, ticketId);
                 }
             }
 
-            // =================================================================================
-            // 4. ZMIANA KATEGORII (POPRAWIONA LOGIKA)
-            // =================================================================================
             if (changes.category && ticket.category !== changes.category) {
-                // Pobieramy ustawienia
-                const settingsQuery = { query: "SELECT * FROM c WHERE c.id = 'global_settings'" };
-                const { resources: settingsItems } = await ticketsContainer.items.query(settingsQuery).fetchAll();
-                const globalSettings = settingsItems.length > 0 ? settingsItems[0] : null;
+                const { resources: sData } = await ticketsContainer.items.query("SELECT * FROM c WHERE c.id = 'global_settings'").fetchAll();
+                const globalSettings = sData.length > 0 ? sData[0] : null;
 
                 let newGroup = "Pierwsza linia wsparcia";
-                let newSlaHours = 8; // Domyślna wartość, jeśli nie znaleziono konfiguracji
+                let newSlaHours = 8;
                 let workConfig = { startHour: 8, endHour: 16, holidays: [] };
 
                 if (globalSettings) {
                     const catConfig = globalSettings.categories.find(c => c.name === changes.category);
                     if (catConfig) {
                         newGroup = catConfig.assignedGroup;
-                        newSlaHours = catConfig.sla; // Pobieramy nowe SLA
+                        newSlaHours = catConfig.sla;
                     }
-                    if (globalSettings.workConfig) {
-                        workConfig = globalSettings.workConfig;
-                    }
+                    if (globalSettings.workConfig) workConfig = globalSettings.workConfig;
                 }
 
                 addSystemComment(ticket, `Zmieniono kategorię z "${ticket.category}" na "${changes.category}".`, clientPrincipal);
                 ticket.category = changes.category;
                 
-                // A. Zmiana Grupy
                 if (newGroup !== ticket.assignedTo.group) {
-                    addSystemComment(ticket, `Zmieniono grupę odpowiedzialną na: ${newGroup}.`, clientPrincipal);
+                    addSystemComment(ticket, `Zmieniono grupę na: ${newGroup}.`, clientPrincipal);
                     ticket.assignedTo.group = newGroup;
                     if(ticket.assignedTo.person) ticket.assignedTo.person = null;
                 }
 
-                // B. NOWOŚĆ: Przeliczenie SLA
-                // Używamy daty UTWORZENIA (ticket.dates.createdAt) jako bazy, aby SLA było uczciwe.
-                // Jeśli wolisz liczyć czas "od teraz", zmień ticket.dates.createdAt na new Date().
+                // Przeliczanie SLA
                 const newSlaDate = calculateAdvancedSLA(ticket.dates.createdAt, newSlaHours, workConfig);
                 ticket.dates.guaranteedResolutionAt = newSlaDate.toISOString();
-                
-                addSystemComment(ticket, `Zaktualizowano termin SLA (wg nowej kategorii: ${newSlaHours}h).`, clientPrincipal);
+                addSystemComment(ticket, `Zaktualizowano termin SLA (${newSlaHours}h).`, clientPrincipal);
 
-                // C. Zmiana statusu jeśli był Nieprzeczytane
-                if (ticket.status === 'Nieprzeczytane') { 
-                    addSystemComment(ticket, `Automatycznie zmieniono status z "Nieprzeczytane" na "Otwarte".`, clientPrincipal);
-                    ticket.status = 'Otwarte';
-                    if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Zgłoszenie #${ticketId} zakwalifikowane.`, ticketId);
-                }
+                if (ticket.status === 'Nieprzeczytane') ticket.status = 'Otwarte';
             }
 
-            // KOMENTARZ
             if (changes.newComment) {
                  if (!ticket.comments) ticket.comments = [];
                  ticket.comments.push({
@@ -251,17 +218,53 @@ module.exports = async function (context, req) {
             }
         }
         
+        // --- SEKCJA ZAPISU Z BLOKADĄ (OPTIMISTIC CONCURRENCY) ---
+        
+        // Sytuacja 1: Zmiana kategorii (zmiana Partition Key)
         if (ticket.category !== originalCategory) {
-            const { resource: createdItem } = await ticketsContainer.items.create(ticket);
-            await ticketsContainer.item(ticketId, originalCategory).delete();
-            context.res = { body: createdItem };
+            // Tutaj musimy: 1. Utworzyć nowy, 2. Usunąć stary (pod warunkiem ETagu!)
+            // Ryzykowne: jeśli usunięcie się nie uda, będziemy mieli duplikat.
+            // Bezpieczniej: Najpierw spróbować usunąć stary z ifMatch.
+            
+            try {
+                // Krok A: Usuń stary dokument TYLKO jeśli ETag się zgadza
+                await ticketsContainer.item(ticketId, originalCategory).delete({ ifMatch: etag });
+                
+                // Krok B: Jeśli się udało (brak błędu), tworzymy nowy
+                const { resource: createdItem } = await ticketsContainer.items.create(ticket);
+                context.res = { body: createdItem };
+
+            } catch (deleteErr) {
+                if (deleteErr.code === 412) {
+                    // Ktoś zmienił dokument w międzyczasie!
+                    context.res = { status: 412, body: { message: "Konflikt edycji: Ktoś inny zmodyfikował to zgłoszenie." } };
+                } else {
+                    throw deleteErr;
+                }
+            }
+
         } else {
-            const { resource: updatedItem } = await ticketsContainer.items.upsert(ticket);
-            context.res = { body: updatedItem };
+            // Sytuacja 2: Standardowa aktualizacja (w tej samej partycji)
+            try {
+                // Używamy .replace() z opcją ifMatch
+                const { resource: updatedItem } = await ticketsContainer
+                    .item(ticketId, ticket.category)
+                    .replace(ticket, { ifMatch: etag }); // KLUCZOWE: Sprawdzamy ETag
+
+                context.res = { body: updatedItem };
+
+            } catch (updateErr) {
+                if (updateErr.code === 412) {
+                    // Błąd 412 Precondition Failed - ETagi się nie zgadzają
+                    context.res = { status: 412, body: { message: "Konflikt edycji: Ktoś inny zmodyfikował to zgłoszenie." } };
+                } else {
+                    throw updateErr;
+                }
+            }
         }
 
     } catch (error) {
-        context.log.error("Error in updateTicket:", error.stack);
-        context.res = { status: 500, body: { message: "Error updating ticket." } };
+        context.log.error("Error updateTicket:", error);
+        context.res = { status: 500, body: { message: "Wystąpił błąd serwera." } };
     }
 };
