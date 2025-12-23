@@ -13,54 +13,40 @@ function padNumber(num, size) {
 
 /**
  * ZAAWANSOWANE OBLICZANIE SLA (WORK CALENDAR)
- * * @param {Date} startDate - Data utworzenia zgłoszenia
- * @param {number} hoursToAdd - Czas SLA w godzinach
- * @param {Object} workConfig - Konfiguracja { startHour, endHour, holidays: [] }
  */
 function calculateAdvancedSLA(startDate, hoursToAdd, workConfig) {
-    // Domyślne wartości, jeśli brak konfiguracji
     const startHour = workConfig?.startHour || 8;
     const endHour = workConfig?.endHour || 16;
-    const holidays = workConfig?.holidays || []; // Format 'YYYY-MM-DD'
+    const holidays = workConfig?.holidays || []; 
 
     let minutesRemaining = hoursToAdd * 60;
-    let currentDate = new Date(startDate); // Kopia daty startowej
+    let currentDate = new Date(startDate); 
 
-    // Pętla "skacząca", dopóki nie zużyjemy całego czasu SLA
     while (minutesRemaining > 0) {
-        
-        // 1. Sprawdź, czy dzisiaj jest dzień pracujący (nie weekend, nie święto)
-        const dayOfWeek = currentDate.getDay(); // 0=Niedziela, 6=Sobota
+        const dayOfWeek = currentDate.getDay(); 
         const dateString = currentDate.toISOString().split('T')[0];
         const isHoliday = holidays.includes(dateString);
         const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
 
         if (isWeekend || isHoliday) {
-            // Przeskocz do następnego dnia, ustaw godzinę na start pracy
             currentDate.setDate(currentDate.getDate() + 1);
             currentDate.setHours(startHour, 0, 0, 0);
-            continue; // Wróć na początek pętli
+            continue; 
         }
 
-        // 2. Obsługa godzin pracy wewnątrz dnia roboczego
         const currentHour = currentDate.getHours();
-        const currentMinute = currentDate.getMinutes();
 
-        // A. Jeśli jest PRZED pracą -> ustaw na start pracy
         if (currentHour < startHour) {
             currentDate.setHours(startHour, 0, 0, 0);
             continue;
         }
 
-        // B. Jeśli jest PO pracy -> przeskocz do następnego dnia rano
         if (currentHour >= endHour) {
             currentDate.setDate(currentDate.getDate() + 1);
             currentDate.setHours(startHour, 0, 0, 0);
             continue;
         }
 
-        // C. Jesteśmy w godzinach pracy! Liczymy ile minut zostało do końca dnia pracy.
-        // Koniec pracy dzisiaj:
         const endOfWorkDay = new Date(currentDate);
         endOfWorkDay.setHours(endHour, 0, 0, 0);
 
@@ -68,13 +54,10 @@ function calculateAdvancedSLA(startDate, hoursToAdd, workConfig) {
         const minutesUntilEndOfDay = Math.floor(msUntilEndOfDay / 60000);
 
         if (minutesUntilEndOfDay >= minutesRemaining) {
-            // Zmieścimy się dzisiaj! Dodajemy resztę minut i kończymy.
             currentDate.setMinutes(currentDate.getMinutes() + minutesRemaining);
             minutesRemaining = 0;
         } else {
-            // Nie zmieścimy się dzisiaj. Zużywamy to co zostało z dnia...
             minutesRemaining -= minutesUntilEndOfDay;
-            // ...i przeskakujemy do następnego dnia rano
             currentDate.setDate(currentDate.getDate() + 1);
             currentDate.setHours(startHour, 0, 0, 0);
         }
@@ -105,14 +88,13 @@ module.exports = async function (context, req) {
             finalReportingUserEmail = onBehalfOf.trim();
         }
 
-        // KROK 1: Pobierz globalne ustawienia (Kategorie, SLA, Kalendarz)
+        // KROK 1: Pobierz globalne ustawienia
         const settingsQuery = { query: "SELECT * FROM c WHERE c.id = 'global_settings'" };
         const { resources: settingsItems } = await ticketsContainer.items.query(settingsQuery).fetchAll();
         
         const globalSettings = settingsItems.length > 0 ? settingsItems[0] : null;
         if (!globalSettings) throw new Error("Brak konfiguracji 'global_settings' w bazie danych!");
 
-        // Pobieramy konfigurację kalendarza
         const workConfig = globalSettings.workConfig || { startHour: 8, endHour: 16, holidays: [] };
 
         // KROK 2: Kategoria i SLA
@@ -123,23 +105,61 @@ module.exports = async function (context, req) {
         const selectedSlaHours = categoryConfig.sla;
         const selectedGroup = categoryConfig.assignedGroup;
 
-        // KROK 3: ID Zgłoszenia
-        const { resource: counterDoc } = await countersContainer.item("ticketSequence", "ticketSequence").read();
-        const currentYear = new Date().getFullYear();
-        let nextNumber;
+        // =================================================================================
+        // KROK 3: ID Zgłoszenia z zabezpieczeniem przed wyścigiem (Optimistic Concurrency)
+        // =================================================================================
+        let retryCount = 0;
+        const maxRetries = 10;
+        let newTicketId = null;
 
-        if (counterDoc.year === currentYear) {
-            nextNumber = counterDoc.lastNumber + 1;
-        } else {
-            nextNumber = 1; 
-            counterDoc.year = currentYear;
+        while (retryCount < maxRetries) {
+            try {
+                // A. Pobieramy licznik I JEGO ETAG (wersję)
+                const { resource: counterDoc, etag } = await countersContainer.item("ticketSequence", "ticketSequence").read();
+                
+                if (!counterDoc) {
+                    throw new Error("Dokument licznika 'ticketSequence' nie istnieje.");
+                }
+
+                const currentYear = new Date().getFullYear();
+                let nextNumber;
+
+                // Logika inkrementacji
+                if (counterDoc.year === currentYear) {
+                    nextNumber = counterDoc.lastNumber + 1;
+                } else {
+                    nextNumber = 1; 
+                    counterDoc.year = currentYear;
+                }
+
+                // Aktualizujemy obiekt w pamięci
+                counterDoc.lastNumber = nextNumber;
+
+                // B. Próbujemy zapisać Z WARUNKIEM ifMatch
+                // To rzuci błąd 412, jeśli etag w bazie jest inny niż ten, który odczytaliśmy
+                await countersContainer.item("ticketSequence", "ticketSequence").replace(counterDoc, { ifMatch: etag });
+
+                // Jeśli przeszliśmy tutaj, to znaczy, że się udało (nikt nas nie ubiegł)
+                newTicketId = `${currentYear}-${padNumber(nextNumber, 4)}`;
+                break; // Wychodzimy z pętli while
+
+            } catch (err) {
+                // Kod 412: Precondition Failed (Ktoś zmienił dokument w międzyczasie)
+                if (err.code === 412) {
+                    retryCount++;
+                    // Kontynuujemy pętlę -> pobierzemy nowszą wersję i spróbujemy jeszcze raz
+                    if (retryCount >= maxRetries) {
+                        throw new Error("Serwer jest obciążony. Nie udało się wygenerować ID zgłoszenia. Spróbuj ponownie.");
+                    }
+                } else {
+                    // Inny błąd - rzucamy dalej
+                    throw err;
+                }
+            }
         }
-        
-        const newTicketId = `${currentYear}-${padNumber(nextNumber, 4)}`;
-        counterDoc.lastNumber = nextNumber;
-        await countersContainer.items.upsert(counterDoc);
+        // =================================================================================
 
-        // KROK 4: Obliczamy SLA z uwzględnieniem kalendarza
+        // KROK 4: Obliczamy SLA
         const now = new Date();
         const slaDate = calculateAdvancedSLA(now, selectedSlaHours, workConfig);
 
@@ -160,7 +180,7 @@ module.exports = async function (context, req) {
             dates: {
                 createdAt: now.toISOString(),
                 closedAt: null,
-                guaranteedResolutionAt: slaDate.toISOString() // Data wyliczona inteligentnie
+                guaranteedResolutionAt: slaDate.toISOString() 
             },
             attachments: attachment ? [attachment] : [],
             comments: [] 
@@ -176,7 +196,7 @@ module.exports = async function (context, req) {
         context.log.error("CreateTicket Error:", error);
         context.res = {
             status: 500,
-            body: "Error connecting to or writing to the database."
+            body: "Error connecting to or writing to the database: " + error.message
         };
     }
 };
