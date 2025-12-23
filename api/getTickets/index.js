@@ -29,46 +29,15 @@ module.exports = async function (context, req) {
         const pageSize = 10;
         const offset = (page - 1) * pageSize;
 
-        // --- 3. PRZYGOTOWANIE LOGIKI GRUP (PRZED ZAPYTANIEM GŁÓWNYM) ---
-        // Musimy ustalić grupy ZANIM zbudujemy SQL, aby użyć ich w klauzuli WHERE
-        let myAllowedGroups = [];
-        
-        if (isServiceDesk && quickFilter === 'my_group') {
-            try {
-                // Pobieramy ustawienia tylko raz, aby wydobyć grupy użytkownika
-                const { resources: settings } = await container.items.query(
-                    "SELECT * FROM c WHERE c.id = 'global_settings'"
-                ).fetchAll();
-                
-                if (settings && settings.length > 0) {
-                    const config = settings[0];
-                    if (config.groups && Array.isArray(config.groups)) {
-                        const userEmailLower = userEmail.toLowerCase().trim();
-                        // Pobieramy nazwy grup, do których należy user
-                        myAllowedGroups = config.groups
-                            .filter(g => g.members && g.members.some(m => m.toLowerCase().trim() === userEmailLower))
-                            .map(g => g.name); // Zachowujemy oryginalną wielkość liter lub normalizujemy w zależności od danych
-                    }
-                }
+        // --- 3. PRZYGOTOWANIE LOGIKI FILTRACJI (JS) ---
+        let filterByMyGroups = false;
+        let myAllowedGroups = []; 
 
-                // OPTYMALIZACJA: Jeśli wybrano filtr "Moje grupy", a user nie ma grup -> Zwracamy pusto od razu
-                if (myAllowedGroups.length === 0) {
-                    return {
-                        body: { tickets: [], totalCount: 0, currentPage: page, totalPages: 0 }
-                    };
-                }
-
-            } catch (err) {
-                context.log.error("Błąd pobierania grup:", err.message);
-                // Kontynuujemy (zwróci pustą listę lub błąd w zależności od strategii)
-            }
-        }
-
-        // --- 4. BUDOWANIE ZAPYTANIA SQL (WHERE) ---
+        // --- 4. FILTRY SQL (WHERE) ---
         let whereClauses = [];
         let parameters = [];
 
-        // Filtry techniczne
+        // Filtry techniczne (stałe)
         whereClauses.push("c.id != 'global_settings'");
         whereClauses.push("(NOT IS_DEFINED(c.type) OR c.type != 'notification')");
 
@@ -78,26 +47,49 @@ module.exports = async function (context, req) {
             parameters.push({ name: "@userEmail", value: userEmail });
         }
 
-        // Logika filtrów dla SD
+        // --- 5. LOGIKA FILTRÓW DLA SD ---
         if (isServiceDesk) {
+            
+            // === OPCJA: MOJA GRUPA ===
             if (quickFilter === 'my_group') {
-                // STATUSY: Tylko otwarte (zgodnie z oryginalną logiką)
-                whereClauses.push("c.status != 'Zamknięte' AND c.status != 'Rozwiązane' AND c.status != 'Odrzucone'");
+                filterByMyGroups = true; // Włączamy filtrowanie grup w JS
                 
-                // GRUPY: SQL IN / ARRAY_CONTAINS
-                // Używamy ARRAY_CONTAINS, aby sprawdzić czy grupa zgłoszenia jest na liście usera
-                whereClauses.push("ARRAY_CONTAINS(@myGroups, c.assignedTo.group)");
-                parameters.push({ name: "@myGroups", value: myAllowedGroups });
-
-            } else if (quickFilter === 'open') {
+                // A. Dodajemy filtr statusu do SQL (tylko otwarte)
+                // To jest bezpieczne dla bazy i od razu odsieje zamknięte tickety
                 whereClauses.push("c.status != 'Zamknięte' AND c.status != 'Rozwiązane' AND c.status != 'Odrzucone'");
-            } else if (quickFilter === 'closed') {
+
+                // B. Pobieramy grupy z ustawień (do filtrowania w JS)
+                try {
+                    const { resources: settings } = await container.items.query(
+                        "SELECT * FROM c WHERE c.id = 'global_settings'",
+                        { enableCrossPartitionQuery: true }
+                    ).fetchAll();
+                    
+                    if (settings && settings.length > 0) {
+                        const config = settings[0];
+                        if (config.groups && Array.isArray(config.groups)) {
+                            const userEmailLower = userEmail.toLowerCase().trim();
+                            
+                            // Zapisujemy nazwy grup (małymi literami)
+                            myAllowedGroups = config.groups
+                                .filter(g => g.members && g.members.some(m => m.toLowerCase().trim() === userEmailLower))
+                                .map(g => g.name.toLowerCase().trim());
+                        }
+                    }
+                } catch (err) {
+                    context.log.error("Błąd pobierania grup:", err.message);
+                }
+            } 
+            // === INNE FILTRY ===
+            else if (quickFilter === 'open') {
+                whereClauses.push("c.status != 'Zamknięte' AND c.status != 'Rozwiązane' AND c.status != 'Odrzucone'");
+            }
+            else if (quickFilter === 'closed') {
                 whereClauses.push("(c.status = 'Zamknięte' OR c.status = 'Rozwiązane' OR c.status = 'Odrzucone')");
             }
-            // 'all' nie dodaje dodatkowych warunków WHERE
         }
 
-        // Wyszukiwanie tekstowe
+        // --- 6. WYSZUKIWANIE TEKSTOWE ---
         if (searchText) {
             let condition = "";
             switch (searchField) {
@@ -124,41 +116,49 @@ module.exports = async function (context, req) {
             whereString = " WHERE " + whereClauses.join(" AND ");
         }
 
-       // --- 5. WYKONANIE ZAPYTAŃ (COUNT + DATA) ---
+        // --- 7. POBIERANIE DANYCH ---
+        // Pobieramy surowe dane (SQL filtruje statusy i tekst, ale NIE grupy)
+        const query = `SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c ${whereString}`;
+
+        const { resources: rawTickets } = await container.items.query(
+            { query, parameters },
+            { enableCrossPartitionQuery: true }
+        ).fetchAll();
+
+        // --- 8. FILTROWANIE GRUP (JS), SORTOWANIE I PAGINACJA ---
         
-        // A. Zapytanie o licznik
-        const countQuerySpec = {
-            query: `SELECT VALUE COUNT(1) FROM c ${whereString}`,
-            parameters: parameters
-        };
+        let processedTickets = rawTickets;
 
-        // B. Zapytanie o dane (Paginacja SQL)
-        // Interpolacja zmiennych offset/limit jest poprawna i bezpieczna tutaj.
-        const dataQuerySpec = {
-            query: `
-                SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates 
-                FROM c 
-                ${whereString} 
-                ORDER BY c.dates.createdAt DESC 
-                OFFSET ${offset} LIMIT ${pageSize}
-            `,
-            parameters: parameters
-        };
+        // A. Filtrowanie grup w JS (tylko jeśli wybrano my_group)
+        if (filterByMyGroups) {
+            if (myAllowedGroups.length === 0) {
+                processedTickets = [];
+            } else {
+                processedTickets = processedTickets.filter(ticket => {
+                    if (ticket.assignedTo && ticket.assignedTo.group) {
+                        const ticketGroup = ticket.assignedTo.group.toLowerCase().trim();
+                        return myAllowedGroups.includes(ticketGroup);
+                    }
+                    return false;
+                });
+            }
+        }
 
-        // POPRAWKA: Dodano drugi argument { enableCrossPartitionQuery: true }
-        // Bez tego Cosmos DB zwraca błąd "One of the input values is invalid" na kolekcjach partycjonowanych.
-        const [countResponse, dataResponse] = await Promise.all([
-            container.items.query(countQuerySpec, { enableCrossPartitionQuery: true }).fetchAll(),
-            container.items.query(dataQuerySpec, { enableCrossPartitionQuery: true }).fetchAll()
-        ]);
+        // B. Sortowanie (od najnowszych)
+        processedTickets.sort((a, b) => {
+            const dateA = a.dates && a.dates.createdAt ? new Date(a.dates.createdAt).getTime() : 0;
+            const dateB = b.dates && b.dates.createdAt ? new Date(b.dates.createdAt).getTime() : 0;
+            return dateB - dateA;
+        });
 
-        const totalCount = countResponse.resources[0];
-        const tickets = dataResponse.resources;
+        // C. Paginacja
+        const totalCount = processedTickets.length;
         const totalPages = Math.ceil(totalCount / pageSize);
+        const paginatedTickets = processedTickets.slice(offset, offset + pageSize);
 
         context.res = {
             body: {
-                tickets: tickets,
+                tickets: paginatedTickets,
                 totalCount: totalCount,
                 currentPage: page,
                 totalPages: totalPages
@@ -166,7 +166,7 @@ module.exports = async function (context, req) {
         };
 
     } catch (error) {
-        context.log.error("CRITICAL ERROR in getTickets:", error);
+        context.log.error("CRITICAL ERROR:", error);
         context.res = { 
             status: 500, 
             body: { 
