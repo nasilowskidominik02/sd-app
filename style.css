@@ -661,7 +661,7 @@ a:hover {
     border-bottom: 1px solid var(--gray-border);
     background-color: var(--light-gray-bg);
     padding: 0 16px;
-    flex-shrink: 0; /* Nie zgniataj paska */
+    flex-shrink: 0;
 }
 
 /* Wygląd przycisku */
@@ -691,7 +691,7 @@ a:hover {
 
 /* --- KLUCZOWY MOMENT: Logika ukrywania --- */
 
-/* Domyślnie UKRYJ zawartość zakładki */
+/* Domyślnie UKRYJ wszystkie treści zakładek */
 .tab-content {
     display: none; 
     flex-direction: column;
@@ -700,7 +700,7 @@ a:hover {
     padding: 24px;
 }
 
-/* POKAŻ zawartość tylko, gdy ma klasę 'active' */
+/* POKAŻ treść tylko, gdy ma klasę 'active' */
 .tab-content.active {
     display: flex; 
 }
@@ -709,13 +709,40 @@ a:hover {
 
 /* Specyficzne ustawienia dla zakładki Szczegółów */
 #tab-details {
+    /* WAŻNE: Usunąłem stąd 'display: flex', żeby nie nadpisywało ukrywania! */
+    /* Flexbox jest dziedziczony z klasy .tab-content.active */
     overflow-y: auto;
     gap: 24px; /* Odstęp między sekcjami */
 }
 
+/* Formatowanie pola z treścią zgłoszenia */
+.ticket-content-box {
+    background: white;
+    padding: 16px;
+    border: 1px solid var(--gray-border);
+    border-radius: var(--border-radius);
+    min-height: 120px;
+    white-space: pre-wrap;
+    line-height: 1.6;
+    word-wrap: break-word;
+    font-size: 14px;
+}
+
+#tab-details h4 {
+    margin-bottom: 12px;
+    color: var(--text-dark);
+    font-weight: 600;
+}
+
+#modal-attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
 /* Specyficzne ustawienia dla zakładki Historii */
 #tab-history {
-    padding: 0; /* Historia nie ma marginesów, żeby była na całą szerokość */
+    padding: 0; /* Historia na całą szerokość */
 }
 
 /* Resetujemy padding rodzica, żeby zakładki dotykały krawędzi */
