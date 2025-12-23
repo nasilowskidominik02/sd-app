@@ -277,128 +277,122 @@
             }
         }
 
-        function renderPagination(totalCount) {
+        function renderPagination(totalCount, totalPages) {
             const container = document.getElementById('pagination-container');
             container.innerHTML = '';
 
-            // 1. Kontener na tekst informacyjny
+            // Info
             const info = document.createElement('div');
-            info.className = 'pagination-info'; // Używamy klasy z CSS
-            info.textContent = `Strona ${currentPage} | Wszystkich zgłoszeń: ${totalCount}`;
+            info.className = 'pagination-info';
+            // Wyświetlamy np. Strona 1 z 3
+            info.textContent = `Strona ${currentPage} z ${totalPages || 1} | Wszystkich zgłoszeń: ${totalCount}`;
             container.appendChild(info);
 
-            // 2. Kontener na przyciski
+            // Kontener przycisków
             const buttonsDiv = document.createElement('div');
-            buttonsDiv.className = 'pagination-buttons'; // Używamy klasy z CSS
+            buttonsDiv.className = 'pagination-buttons';
 
             // Przycisk "Poprzednia"
             const prevBtn = document.createElement('button');
             prevBtn.textContent = 'Poprzednia';
-            prevBtn.disabled = currentPage === 1; // Nieaktywny na 1. stronie
+            // Nieaktywny, jeśli jesteśmy na stronie 1
+            prevBtn.disabled = currentPage <= 1;
             prevBtn.onclick = () => loadTickets(currentPage - 1);
             
             // Przycisk "Następna"
             const nextBtn = document.createElement('button');
             nextBtn.textContent = 'Następna';
-            // Aktywny tylko, jeśli mamy token do następnej strony
-            nextBtn.disabled = !hasNextPage; 
+            // Nieaktywny, jeśli obecna strona jest większa lub równa całkowitej liczbie stron
+            nextBtn.disabled = currentPage >= totalPages;
             nextBtn.onclick = () => loadTickets(currentPage + 1);
 
             buttonsDiv.appendChild(prevBtn);
             buttonsDiv.appendChild(nextBtn);
             container.appendChild(buttonsDiv);
-        }
+    }
 
         async function loadTickets(targetPage = 1) {
-    // Pobieranie filtrów (bez zmian)
-    const searchInput = document.getElementById('search-input');
-    const fieldSelect = document.getElementById('search-field');
-    const quickFilterSelect = document.getElementById('quick-filter');
-    
-    const searchTerm = searchInput ? searchInput.value : '';
-    const searchField = fieldSelect ? fieldSelect.value : 'id';
-    const quickFilter = quickFilterSelect ? quickFilterSelect.value : 'all';
-
-    const tbody = document.getElementById('tickets-tbody');
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">Ładowanie zgłoszeń...</td></tr>';
-    
-    // POBIERAMY TOKEN DLA ŻĄDANEJ STRONY
-    // Jeśli idziemy do str. 1, token to null.
-    // Jeśli idziemy do str. 2, bierzemy token zapisany po pobraniu str. 1
-    const tokenToSend = pageTokens[targetPage] || null;
-
-    try {
-        // Budowanie URL - używamy continuationToken zamiast page
-        const params = new URLSearchParams({
-            search: searchTerm,
-            field: searchField,
-            quickFilter: quickFilter
-        });
+        const searchInput = document.getElementById('search-input');
+        const fieldSelect = document.getElementById('search-field');
+        const quickFilterSelect = document.getElementById('quick-filter');
         
-        if (tokenToSend) {
-            params.append('continuationToken', tokenToSend);
+        const searchTerm = searchInput ? searchInput.value : '';
+        const searchField = fieldSelect ? fieldSelect.value : 'id';
+        const quickFilter = quickFilterSelect ? quickFilterSelect.value : 'all';
+
+        const tbody = document.getElementById('tickets-tbody');
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">Ładowanie zgłoszeń...</td></tr>';
+        
+        try {
+            // Wysłanie numeru strony (page) zamiast tokena
+            const params = new URLSearchParams({
+                page: targetPage,
+                search: searchTerm,
+                field: searchField,
+                quickFilter: quickFilter
+            });
+            
+            const response = await fetch(`/api/getTickets?${params.toString()}`);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            
+            const data = await response.json();
+            
+            // Backend zwraca teraz totalPages, więc używamy tego
+            const { tickets, totalCount, totalPages } = data;
+
+            currentPage = targetPage; // Aktualizujemy obecną stronę
+            
+            tbody.innerHTML = '';
+            
+            if (!tickets || tickets.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;">Brak zgłoszeń.</td></tr>`;
+                renderPagination(0, 0); 
+                return;
+            }
+
+            tickets.forEach(ticket => {
+                 const row = tbody.insertRow();
+                 row.className = 'ticket-row';
+                 row.dataset.ticketId = ticket.id;
+                 row.onclick = () => openTicketModal(ticket.id);
+
+                 // Kolorowanie SLA
+                 const isClosed = ['Rozwiązane', 'Odrzucone', 'Zamknięte'].includes(ticket.status);
+                 if (!isClosed && ticket.dates && ticket.dates.guaranteedResolutionAt) {
+                    const now = new Date();
+                    const slaTime = new Date(ticket.dates.guaranteedResolutionAt);
+                    const diffMs = slaTime.getTime() - now.getTime();
+                    const diffHours = diffMs / (1000 * 60 * 60); 
+
+                    if (diffMs < 0) { row.classList.add('sla-danger'); } 
+                    else if (diffHours <= 2) { row.classList.add('sla-warning'); }
+                 }
+
+                 const statusClass = `status-${ticket.status.toLowerCase().replace(/\s/g, '-')}`;
+                 
+                 // Funkcje pomocnicze (formatDateTwoLines, escapeHTML) muszą być gdzieś w kodzie dostępne
+                 row.innerHTML = `
+                    <td>${escapeHTML(ticket.id)}</td>
+                    <td><span class="status-badge ${statusClass}">${escapeHTML(ticket.status)}</span></td>
+                    <td>${escapeHTML(ticket.title)}</td>
+                    <td>${ticket.reportingUser ? escapeHTML(ticket.reportingUser.name).replace('@', '<br>@') : '-'}</td>
+                    <td>${escapeHTML(ticket.category)}</td>
+                    <td>${ticket.assignedTo && ticket.assignedTo.person ? escapeHTML(ticket.assignedTo.person).replace('@', '<br>@') : '-'}</td>
+                    <td>${ticket.assignedTo ? escapeHTML(ticket.assignedTo.group) : '-'}</td>
+                    <td>${ticket.dates ? formatDateTwoLines(ticket.dates.createdAt) : '-'}</td>
+                    <td>${ticket.dates ? formatDateTwoLines(ticket.dates.guaranteedResolutionAt) : '-'}</td>
+                    <td>${ticket.dates ? formatDateTwoLines(ticket.dates.closedAt) : '-'}</td>
+                 `;
+            });
+            
+            // Przekazujemy totalCount ORAZ totalPages do renderowania
+            renderPagination(totalCount, totalPages);
+
+        } catch (error) {
+            console.error('Błąd:', error);
+            tbody.innerHTML = '<tr><td colspan="10" class="error-message">Błąd ładowania danych.</td></tr>';
         }
-
-        const response = await fetch(`/api/getTickets?${params.toString()}`);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        
-        const data = await response.json();
-        const { tickets, totalCount, continuationToken } = data;
-
-        // ZAPISYWANIE TOKENA DLA NASTĘPNEJ STRONY
-        currentPage = targetPage;
-        currentNextToken = continuationToken; // Może być null, jeśli to koniec
-        
-        if (currentNextToken) {
-            // Zapisz token, który pozwoli wejść na stronę (currentPage + 1)
-            pageTokens[currentPage + 1] = currentNextToken;
-            hasNextPage = true;
-        } else {
-            hasNextPage = false;
-        }
-
-        tbody.innerHTML = '';
-        
-        if (!tickets || tickets.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;">Brak zgłoszeń.</td></tr>`;
-            renderPagination(0); // Przekazujemy 0 lub totalCount informacyjnie
-            return;
-        }
-
-        // Generowanie wierszy (bez zmian)
-        tickets.forEach(ticket => {
-             // ... (Tutaj wklej kod generowania wierszy z Twojego obecnego pliku, ten fragment się nie zmienia) ...
-             // Skopiuj logikę: const row = tbody.insertRow(); ... row.innerHTML = ...
-             // Pamiętaj o obsłudze dat i statusów, którą już masz.
-             const row = tbody.insertRow();
-             row.className = 'ticket-row';
-             row.dataset.ticketId = ticket.id;
-             row.onclick = () => openTicketModal(ticket.id);
-
-             // (Skrócona wersja dla czytelności tutaj, wklej swoją pełną)
-             const statusClass = `status-${ticket.status.toLowerCase().replace(/\s/g, '-')}`;
-             row.innerHTML = `
-                <td>${escapeHTML(ticket.id)}</td>
-                <td><span class="status-badge ${statusClass}">${escapeHTML(ticket.status)}</span></td>
-                <td>${escapeHTML(ticket.title)}</td>
-                <td>${ticket.reportingUser ? escapeHTML(ticket.reportingUser.name) : '-'}</td>
-                <td>${escapeHTML(ticket.category)}</td>
-                <td>${ticket.assignedTo && ticket.assignedTo.person ? escapeHTML(ticket.assignedTo.person) : '-'}</td>
-                <td>${ticket.assignedTo ? escapeHTML(ticket.assignedTo.group) : '-'}</td>
-                <td>${ticket.dates ? formatDateTwoLines(ticket.dates.createdAt) : '-'}</td>
-                <td>${ticket.dates ? formatDateTwoLines(ticket.dates.guaranteedResolutionAt) : '-'}</td>
-                <td>${ticket.dates ? formatDateTwoLines(ticket.dates.closedAt) : '-'}</td>
-             `;
-        });
-        
-        // Renderujemy nową nawigację
-        renderPagination(totalCount);
-
-    } catch (error) {
-        console.error('Błąd:', error);
-        tbody.innerHTML = '<tr><td colspan="10" class="error-message">Błąd ładowania danych.</td></tr>';
     }
-}
 
         async function openTicketModal(ticketId) {
             const modal = document.getElementById('ticket-modal');
