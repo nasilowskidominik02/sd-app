@@ -425,10 +425,9 @@
 
             const modalBody = document.getElementById('modal-body');
             
-            // Przygotowanie meta-danych (Status, Kto, Kiedy)
             const metaInfoHTML = `
-                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e9ecef;">
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 13px;">
+                <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; border: 1px solid #e9ecef;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; font-size: 13px;">
                         <div><strong>Status:</strong> <span class="status-badge status-${ticket.status.toLowerCase().replace(/\s/g, '-')}">${escapeHTML(ticket.status)}</span></div>
                         <div><strong>Kategoria:</strong> ${escapeHTML(ticket.category)}</div>
                         <div><strong>Zgłaszający:</strong> ${escapeHTML(ticket.reportingUser.name)}</div>
@@ -439,16 +438,16 @@
                 </div>
             `;
 
-            // Przygotowanie Załączników
+            // 2. Przygotowanie Załączników (bez zmian logicznych, tylko styl linku)
             let attachmentsHTML = '';
             if (ticket.attachments && ticket.attachments.length > 0) {
                 attachmentsHTML = ticket.attachments.map(att => 
-                    `<a href="${att.url}" target="_blank" style="display:inline-block; margin-right: 10px; background: #e0f2fe; padding: 5px 10px; border-radius: 4px; color: #0284c7; text-decoration: none;">
-                        📎 ${escapeHTML(att.fileName)}
+                    `<a href="${att.url}" target="_blank" style="display:inline-flex; align-items:center; background: #e0f2fe; padding: 8px 12px; border-radius: 6px; color: #0284c7; text-decoration: none; font-size: 13px; transition: background 0.2s;">
+                        <span style="margin-right: 6px;">📎</span> ${escapeHTML(att.fileName)}
                     </a>`
                 ).join('');
             } else {
-                attachmentsHTML = '<span style="color: #999;">Brak załączników.</span>';
+                attachmentsHTML = '<span style="color: #999; font-size: 14px;">Brak załączników.</span>';
             }
 
             // Konstrukcja HTML z ZAKŁADKAMI
@@ -466,7 +465,7 @@
                     </div>
                 </aside>
 
-                <div class="modal-details-panel">
+               <div class="modal-details-panel">
                     
                     <div class="modal-tabs">
                         <button class="tab-btn active" onclick="switchTab('tab-details')" data-target="tab-details">Szczegóły zgłoszenia</button>
@@ -474,16 +473,23 @@
                     </div>
 
                     <div id="tab-details" class="tab-content active">
-                        ${metaInfoHTML}
                         
-                        <h4 style="margin-top: 0;">Treść zgłoszenia</h4>
-                        <div style="background: white; padding: 15px; border: 1px solid #eee; border-radius: 4px; min-height: 100px; white-space: pre-wrap; line-height: 1.6;">${escapeHTML(ticket.content)}</div>
+                        <div>${metaInfoHTML}</div>
                         
-                        <h4 style="margin-top: 20px;">Załączniki</h4>
-                        <div id="modal-attachments">${attachmentsHTML}</div>
+                        <div>
+                            <h4>Treść zgłoszenia</h4>
+                            <div class="ticket-content-box">${escapeHTML(ticket.content)}</div>
+                        </div>
+                        
+                        <div>
+                            <h4>Załączniki</h4>
+                            <div id="modal-attachments">${attachmentsHTML}</div>
+                        </div>
+
                     </div>
 
-                    <div id="tab-history" class="tab-content">
+                    <div id="tab-history" class="tab-content">...</div>
+                </div>
                         <div id="comments-list" class="comments-list"></div>
                         
                         <form id="comment-form" class="comment-form hidden">

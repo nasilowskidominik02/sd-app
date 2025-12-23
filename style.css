@@ -617,3 +617,41 @@ a:hover {
     height: 100%;
     overflow: hidden; /* Blokujemy scroll rodzica */
 }
+
+/* Ulepszenie głównego kontenera zakładki szczegółów */
+#tab-details {
+    overflow-y: auto;
+    padding: 24px;
+    /* NOWOŚĆ: Używamy flexboxa do układania sekcji jedna pod drugą */
+    display: flex;
+    flex-direction: column;
+    /* NOWOŚĆ: 'gap' zapewnia stały odstęp między sekcjami, zapobiegając nachodzeniu */
+    gap: 24px;
+}
+
+/* Nowa klasa dla pudełka z treścią zgłoszenia (zamiast stylów inline) */
+.ticket-content-box {
+    background: white;
+    padding: 16px;
+    border: 1px solid var(--gray-border);
+    border-radius: var(--border-radius);
+    min-height: 120px; /* Nieco wyższe minimalne pole */
+    white-space: pre-wrap; /* Zachowuje formatowanie tekstu */
+    line-height: 1.6;
+    word-wrap: break-word; /* Zapobiega wyjeżdżaniu długich słów poza ekran */
+    font-size: 14px;
+}
+
+/* Style dla nagłówków sekcji wewnątrz szczegółów */
+#tab-details h4 {
+    margin-bottom: 12px; /* Odstęp pod nagłówkiem */
+    color: var(--text-dark);
+    font-weight: 600;
+}
+
+/* Kontener na załączniki */
+#modal-attachments {
+    display: flex;
+    flex-wrap: wrap; /* Zawijaj załączniki do nowej linii, jeśli się nie mieszczą */
+    gap: 10px; /* Odstęp między kafelkami załączników */
+}
