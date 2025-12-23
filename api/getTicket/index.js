@@ -1,35 +1,32 @@
 const { CosmosClient } = require("@azure/cosmos");
 
-// OPTYMALIZACJA: Inicjalizacja połączenia poza funkcją (Singleton)
 const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
 const container = client.database("ServiceDeskDB").container("Tickets");
 
 module.exports = async function (context, req) {
     const ticketId = req.query.id;
-
+    
     if (!ticketId) {
-        context.res = { status: 400, body: "Please provide a ticket ID." };
+        context.res = { status: 400, body: "Please pass a ticket id on the query string" };
         return;
     }
 
     try {
-        // Zoptymalizowane zapytanie (korzystamy z globalnego 'container')
+        // WAŻNE: SELECT * pobiera też pola systemowe (_etag, _ts), które są kluczowe dla blokady!
         const querySpec = {
-            query: "SELECT * FROM c WHERE c.id = @ticketId",
-            parameters: [
-                { name: "@ticketId", value: ticketId }
-            ]
+            query: "SELECT * FROM c WHERE c.id = @id",
+            parameters: [{ name: "@id", value: ticketId }]
         };
 
         const { resources: items } = await container.items.query(querySpec).fetchAll();
 
-        if (items.length > 0) {
-            context.res = { body: items[0] };
+        if (items.length === 0) {
+            context.res = { status: 404, body: "Ticket not found" };
         } else {
-            context.res = { status: 404, body: "Ticket not found." };
+            // Zwracamy cały obiekt, łącznie z _etag
+            context.res = { body: items[0] };
         }
     } catch (error) {
-        context.log.error(error);
-        context.res = { status: 500, body: "Error reading from the database." };
+        context.res = { status: 500, body: error.message };
     }
 };
