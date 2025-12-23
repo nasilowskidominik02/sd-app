@@ -413,162 +413,169 @@
         }
         
         function populateModal(ticket) {
-            // Opcje do selecta kategorii (bez zmian)
-            let categoryOptions = '';
-            if (cachedCategories.length > 0) {
-                categoryOptions = cachedCategories.map(cat => 
-                    `<option value="${escapeHTML(cat.name)}">${escapeHTML(cat.name)}</option>`
-                ).join('');
-            } else {
-                categoryOptions = `<option value="${escapeHTML(ticket.category)}">${escapeHTML(ticket.category)}</option>`;
-            }
+    // 1. Generowanie opcji do selecta kategorii
+    let categoryOptions = '';
+    if (cachedCategories.length > 0) {
+        categoryOptions = cachedCategories.map(cat => 
+            `<option value="${escapeHTML(cat.name)}">${escapeHTML(cat.name)}</option>`
+        ).join('');
+    } else {
+        categoryOptions = `<option value="${escapeHTML(ticket.category)}">${escapeHTML(ticket.category)}</option>`;
+    }
 
-            const modalBody = document.getElementById('modal-body');
+    // 2. Generowanie HTML dla sekcji "Meta Info" (Status, Data, Osoba)
+    const metaInfoHTML = `
+        <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; border: 1px solid #e9ecef; margin-bottom: 20px;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; font-size: 13px;">
+                <div><strong>Status:</strong> <span class="status-badge status-${ticket.status.toLowerCase().replace(/\s/g, '-')}">${escapeHTML(ticket.status)}</span></div>
+                <div><strong>Kategoria:</strong> ${escapeHTML(ticket.category)}</div>
+                <div><strong>Zgłaszający:</strong> ${escapeHTML(ticket.reportingUser.name)}</div>
+                <div><strong>Grupa:</strong> ${escapeHTML(ticket.assignedTo.group)}</div>
+                <div><strong>Przypisany:</strong> ${escapeHTML(ticket.assignedTo.person || '---')}</div>
+                <div><strong>Utworzono:</strong> ${new Date(ticket.dates.createdAt).toLocaleString('pl-PL')}</div>
+                <div><strong>SLA:</strong> ${new Date(ticket.dates.guaranteedResolutionAt).toLocaleString('pl-PL')}</div>
+            </div>
+        </div>
+    `;
+
+    // 3. Generowanie HTML dla załączników
+    let attachmentsHTML = '';
+    if (ticket.attachments && ticket.attachments.length > 0) {
+        attachmentsHTML = ticket.attachments.map(att => 
+            `<a href="${att.url}" target="_blank" style="display:inline-flex; align-items:center; background: #e0f2fe; padding: 8px 12px; border-radius: 6px; color: #0284c7; text-decoration: none; font-size: 13px; margin-right: 10px; margin-bottom: 10px;">
+                <span style="margin-right: 6px;">📎</span> ${escapeHTML(att.fileName)}
+            </a>`
+        ).join('');
+    } else {
+        attachmentsHTML = '<span style="color: #999; font-size: 14px;">Brak załączników.</span>';
+    }
+
+    // 4. Budowanie GŁÓWNEGO HTML
+    const modalBody = document.getElementById('modal-body');
+    modalBody.innerHTML = `
+        <aside id="modal-actions-panel" class="modal-actions-panel hidden">
+            <h4>Akcje</h4>
+            <button class="btn-action" data-action="close-ticket">Zamknij zgłoszenie</button>
+            <button class="btn-action" data-action="open-ticket">Ustaw jako otwarte</button>
+            <button class="btn-action" data-action="assign-tome">Przypisz do mnie</button>
+            <div class="form-group" style="margin-top: 15px;">
+                <label for="category-select" style="font-size:12px;">Zmień kategorię</label>
+                <select id="category-select" class="form-control">
+                    ${categoryOptions}
+                </select>
+            </div>
+        </aside>
+
+        <div class="modal-details-panel">
             
-            const metaInfoHTML = `
-                <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; border: 1px solid #e9ecef;">
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; font-size: 13px;">
-                        <div><strong>Status:</strong> <span class="status-badge status-${ticket.status.toLowerCase().replace(/\s/g, '-')}">${escapeHTML(ticket.status)}</span></div>
-                        <div><strong>Kategoria:</strong> ${escapeHTML(ticket.category)}</div>
-                        <div><strong>Zgłaszający:</strong> ${escapeHTML(ticket.reportingUser.name)}</div>
-                        <div><strong>Grupa:</strong> ${escapeHTML(ticket.assignedTo.group)}</div>
-                        <div><strong>Przypisany:</strong> ${escapeHTML(ticket.assignedTo.person || '---')}</div>
-                        <div><strong>SLA:</strong> ${new Date(ticket.dates.guaranteedResolutionAt).toLocaleString('pl-PL')}</div>
-                    </div>
-                </div>
-            `;
+            <div class="modal-tabs">
+                <button class="tab-btn active" onclick="switchTab('tab-details')" data-target="tab-details">Szczegóły zgłoszenia</button>
+                <button class="tab-btn" onclick="switchTab('tab-history')" data-target="tab-history">Historia i Komentarze (${ticket.comments ? ticket.comments.length : 0})</button>
+            </div>
 
-            // 2. Przygotowanie Załączników (bez zmian logicznych, tylko styl linku)
-            let attachmentsHTML = '';
-            if (ticket.attachments && ticket.attachments.length > 0) {
-                attachmentsHTML = ticket.attachments.map(att => 
-                    `<a href="${att.url}" target="_blank" style="display:inline-flex; align-items:center; background: #e0f2fe; padding: 8px 12px; border-radius: 6px; color: #0284c7; text-decoration: none; font-size: 13px; transition: background 0.2s;">
-                        <span style="margin-right: 6px;">📎</span> ${escapeHTML(att.fileName)}
-                    </a>`
-                ).join('');
-            } else {
-                attachmentsHTML = '<span style="color: #999; font-size: 14px;">Brak załączników.</span>';
-            }
-
-            modalBody.innerHTML = `
-                <aside id="modal-actions-panel" class="modal-actions-panel hidden">
-                    <h4>Akcje</h4>
-                    <button class="btn-action" data-action="close-ticket">Zamknij zgłoszenie</button>
-                    <button class="btn-action" data-action="open-ticket">Ustaw jako otwarte</button>
-                    <button class="btn-action" data-action="assign-tome">Przypisz do mnie</button>
-                    <div class="form-group" style="margin-top: 15px;">
-                        <label for="category-select" style="font-size:12px;">Zmień kategorię</label>
-                        <select id="category-select" class="form-control">
-                            ${categoryOptions}
-                        </select>
-                    </div>
-                </aside>
-
-                <div class="modal-details-panel">
-                    
-                    <div class="modal-tabs">
-                        <button class="tab-btn active" onclick="switchTab('tab-details')" data-target="tab-details">Szczegóły zgłoszenia</button>
-                        <button class="tab-btn" onclick="switchTab('tab-history')" data-target="tab-history">Historia i Komentarze (${ticket.comments ? ticket.comments.length : 0})</button>
-                    </div>
-
-                    <div id="tab-details" class="tab-content active">
-                        
-                        <div>${metaInfoHTML}</div>
-                        
-                        <div>
-                            <h4>Treść zgłoszenia</h4>
-                            <div class="ticket-content-box">${escapeHTML(ticket.content)}</div>
-                        </div>
-                        
-                        <div>
-                            <h4>Załączniki</h4>
-                            <div id="modal-attachments">${attachmentsHTML}</div>
-                        </div>
-
-                    </div>
-                    <div id="tab-history" class="tab-content">
-                        <div id="comments-list" class="comments-list"></div>
-                        
-                        <form id="comment-form" class="comment-form hidden">
-                            <textarea id="comment-input" placeholder="Napisz komentarz wewnętrzny lub odpowiedź..." style="width: 100%; height: 60px; margin-bottom: 10px;"></textarea>
-                            <div style="display: flex; justify-content: flex-end;">
-                                <button type="submit" class="btn btn-primary">Wyślij wiadomość</button>
-                            </div>
-                        </form>
-                    </div>
-                    </div>
-            `;
-            
-            document.getElementById('modal-title').innerText = `Zgłoszenie #${ticket.id}: ${escapeHTML(ticket.title)}`;
-
-            // Generowanie listy komentarzy (taka sama logika, ale wpada do nowego kontenera)
-            const commentsList = document.getElementById('comments-list');
-            commentsList.innerHTML = '';
-            
-            if (ticket.comments && ticket.comments.length > 0) {
-                // Sortujemy od najstarszych do najnowszych (jak w czacie)
-                ticket.comments.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            <div id="tab-details" class="tab-content active">
                 
-                ticket.comments.forEach(comment => {
-                    const isSystem = comment.isSystemComment;
-                    const commentEl = document.createElement('div');
-                    
-                    // Stylizacja dymków czatu
-                    commentEl.className = `comment ${isSystem ? 'system-comment' : ''}`;
-                    commentEl.style.maxWidth = isSystem ? '100%' : '85%';
-                    commentEl.style.alignSelf = isSystem ? 'center' : 'flex-start'; // Systemowe na środku, ludzi po lewej
-                    
-                    if(isSystem) {
-                        commentEl.style.border = 'none';
-                        commentEl.style.background = 'transparent';
-                        commentEl.style.padding = '5px';
-                        commentEl.style.fontSize = '12px';
-                        commentEl.style.color = '#666';
-                        commentEl.style.textAlign = 'center';
-                        commentEl.innerHTML = `<em>${new Date(comment.timestamp).toLocaleString('pl-PL')} - ${escapeHTML(comment.text)}</em>`;
-                    } else {
-                        // Komentarz człowieka
-                        commentEl.style.background = '#fff';
-                        commentEl.style.border = '1px solid #ddd';
-                        commentEl.style.padding = '12px';
-                        commentEl.style.borderRadius = '8px';
-                        commentEl.style.boxShadow = '0 1px 2px rgba(0,0,0,0.05)';
+                ${metaInfoHTML}
+                
+                <div style="margin-bottom: 24px;">
+                    <h4 style="margin-bottom: 8px;">Treść zgłoszenia</h4>
+                    <div class="ticket-content-box">${escapeHTML(ticket.content)}</div>
+                </div>
+                
+                <div>
+                    <h4 style="margin-bottom: 8px;">Załączniki</h4>
+                    <div id="modal-attachments" style="display:flex; flex-wrap:wrap;">${attachmentsHTML}</div>
+                </div>
 
-                        const attachmentHTML = comment.attachment 
-                        ? `<div class="comment-attachment" style="margin-top:8px; padding-top:8px; border-top:1px solid #eee;">
-                             <a href="${comment.attachment.url}" target="_blank">📎 ${escapeHTML(comment.attachment.fileName)}</a>
-                           </div>` 
-                        : '';
+            </div>
 
-                        commentEl.innerHTML = `
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 12px; color: #888;">
-                                <strong>${escapeHTML(comment.author)}</strong>
-                                <span>${new Date(comment.timestamp).toLocaleString('pl-PL')}</span>
-                            </div>
-                            <div style="font-size: 14px; line-height: 1.5; color: #333;">${escapeHTML(comment.text)}</div>
-                            ${attachmentHTML}
-                        `;
-                    }
-                    commentsList.appendChild(commentEl);
-                });
+            <div id="tab-history" class="tab-content">
+                <div id="comments-list" class="comments-list"></div>
+                
+                <form id="comment-form" class="comment-form hidden">
+                    <textarea id="comment-input" placeholder="Napisz komentarz wewnętrzny lub odpowiedź..." style="width: 100%; height: 60px; margin-bottom: 10px;"></textarea>
+                    <div style="display: flex; justify-content: flex-end;">
+                        <button type="submit" class="btn btn-primary">Wyślij wiadomość</button>
+                    </div>
+                </form>
+            </div>
+
+        </div>
+    `;
+    
+    // Ustawienie tytułu na górze modala
+    document.getElementById('modal-title').innerText = `Zgłoszenie #${ticket.id}: ${escapeHTML(ticket.title)}`;
+
+    // 5. Generowanie listy komentarzy (JS)
+    const commentsList = document.getElementById('comments-list');
+    commentsList.innerHTML = '';
+    
+    if (ticket.comments && ticket.comments.length > 0) {
+        ticket.comments.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        
+        ticket.comments.forEach(comment => {
+            const isSystem = comment.isSystemComment;
+            const commentEl = document.createElement('div');
+            
+            commentEl.className = `comment ${isSystem ? 'system-comment' : ''}`;
+            commentEl.style.maxWidth = isSystem ? '100%' : '85%';
+            commentEl.style.alignSelf = isSystem ? 'center' : 'flex-start';
+            
+            if(isSystem) {
+                commentEl.style.border = 'none';
+                commentEl.style.background = 'transparent';
+                commentEl.style.padding = '5px';
+                commentEl.style.fontSize = '12px';
+                commentEl.style.color = '#666';
+                commentEl.style.textAlign = 'center';
+                commentEl.innerHTML = `<em>${new Date(comment.timestamp).toLocaleString('pl-PL')} - ${escapeHTML(comment.text)}</em>`;
             } else {
-                commentsList.innerHTML = '<div style="text-align:center; color: #999; margin-top: 20px;">Brak historii dla tego zgłoszenia.</div>';
-            }
+                commentEl.style.background = '#fff';
+                commentEl.style.border = '1px solid #ddd';
+                commentEl.style.padding = '12px';
+                commentEl.style.borderRadius = '8px';
+                commentEl.style.boxShadow = '0 1px 2px rgba(0,0,0,0.05)';
 
-            // Logika widoczności panelu akcji (Service Desk vs User)
-            const isServiceDesk = currentUserDetails.userRoles.includes('sd');
-            const isClosed = ['Rozwiązane', 'Odrzucone', 'Zamknięte'].includes(ticket.status);
-            
-            const actionsPanel = document.getElementById('modal-actions-panel');
-            actionsPanel.classList.toggle('hidden', !isServiceDesk);
-            actionsPanel.classList.toggle('is-closed', isClosed);
-            
-            document.getElementById('modal-save-btn').classList.toggle('hidden', !isServiceDesk);
-            document.getElementById('comment-form').classList.toggle('hidden', !isServiceDesk || isClosed);
-            document.getElementById('category-select').value = ticket.category;
-            
-            addModalEventListeners();
-        }
+                const attachmentHTML = comment.attachment 
+                ? `<div class="comment-attachment" style="margin-top:8px; padding-top:8px; border-top:1px solid #eee;">
+                        <a href="${comment.attachment.url}" target="_blank">📎 ${escapeHTML(comment.attachment.fileName)}</a>
+                    </div>` 
+                : '';
+
+                commentEl.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 12px; color: #888;">
+                        <strong>${escapeHTML(comment.author)}</strong>
+                        <span>${new Date(comment.timestamp).toLocaleString('pl-PL')}</span>
+                    </div>
+                    <div style="font-size: 14px; line-height: 1.5; color: #333;">${escapeHTML(comment.text)}</div>
+                    ${attachmentHTML}
+                `;
+            }
+            commentsList.appendChild(commentEl);
+        });
+    } else {
+        commentsList.innerHTML = '<div style="text-align:center; color: #999; margin-top: 20px;">Brak historii dla tego zgłoszenia.</div>';
+    }
+
+    // 6. Logika widoczności panelu akcji
+    if (currentUserDetails) { // Zabezpieczenie
+        const isServiceDesk = currentUserDetails.userRoles.includes('sd');
+        const isClosed = ['Rozwiązane', 'Odrzucone', 'Zamknięte'].includes(ticket.status);
+        
+        const actionsPanel = document.getElementById('modal-actions-panel');
+        actionsPanel.classList.toggle('hidden', !isServiceDesk);
+        actionsPanel.classList.toggle('is-closed', isClosed);
+        
+        document.getElementById('modal-save-btn').classList.toggle('hidden', !isServiceDesk);
+        const commentForm = document.getElementById('comment-form');
+        if(commentForm) commentForm.classList.toggle('hidden', !isServiceDesk || isClosed);
+    }
+
+    const catSelect = document.getElementById('category-select');
+    if(catSelect) catSelect.value = ticket.category;
+    
+    addModalEventListeners();
+}
 
         function switchTab(tabId) {
             // 1. Usuń klasę 'active' ze wszystkich przycisków i treści
