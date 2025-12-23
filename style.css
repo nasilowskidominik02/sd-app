@@ -604,11 +604,6 @@ a:hover {
     background-color: var(--white);
 }
 
-/* Poprawka dla kontenera detali, żeby scrollował się niezależnie */
-#tab-details {
-    overflow-y: auto;
-}
-
 /* Modyfikacja istniejącej klasy .modal-details-panel */
 .modal-details-panel {
     padding: 0 !important; /* Usuwamy padding rodzica, bo zakładki go mają */
@@ -616,17 +611,6 @@ a:hover {
     flex-direction: column;
     height: 100%;
     overflow: hidden; /* Blokujemy scroll rodzica */
-}
-
-/* Ulepszenie głównego kontenera zakładki szczegółów */
-#tab-details {
-    overflow-y: auto;
-    padding: 24px;
-    /* NOWOŚĆ: Używamy flexboxa do układania sekcji jedna pod drugą */
-    display: flex;
-    flex-direction: column;
-    /* NOWOŚĆ: 'gap' zapewnia stały odstęp między sekcjami, zapobiegając nachodzeniu */
-    gap: 24px;
 }
 
 /* Nowa klasa dla pudełka z treścią zgłoszenia (zamiast stylów inline) */
@@ -656,6 +640,11 @@ a:hover {
     gap: 10px; /* Odstęp między kafelkami załączników */
 }
 
+/* =========================================
+   6. ZAKŁADKI (TABS) - POPRAWIONA WERSJA OSTATECZNA
+   ========================================= */
+
+/* Pasek z przyciskami zakładek */
 .modal-tabs {
     display: flex;
     border-bottom: 1px solid var(--gray-border);
@@ -682,7 +671,6 @@ a:hover {
     background-color: rgba(59, 130, 246, 0.05);
 }
 
-/* Aktywny przycisk */
 .tab-btn.active {
     color: var(--primary-blue);
     border-bottom-color: var(--primary-blue);
@@ -691,7 +679,7 @@ a:hover {
 
 /* --- KLUCZOWY MOMENT: Logika ukrywania --- */
 
-/* Domyślnie UKRYJ wszystkie treści zakładek */
+/* 1. Domyślnie UKRYJ wszystkie treści zakładek */
 .tab-content {
     display: none; 
     flex-direction: column;
@@ -700,19 +688,18 @@ a:hover {
     padding: 24px;
 }
 
-/* POKAŻ treść tylko, gdy ma klasę 'active' */
+/* 2. POKAŻ treść tylko, gdy ma klasę 'active' */
 .tab-content.active {
     display: flex; 
 }
 
 /* ----------------------------------------- */
 
-/* Specyficzne ustawienia dla zakładki Szczegółów */
+/* Specyficzne ustawienia dla Szczegółów */
 #tab-details {
-    /* WAŻNE: Usunąłem stąd 'display: flex', żeby nie nadpisywało ukrywania! */
-    /* Flexbox jest dziedziczony z klasy .tab-content.active */
-    overflow-y: auto;
-    gap: 24px; /* Odstęp między sekcjami */
+    /* WAŻNE: Tutaj NIE MOŻE być 'display: flex', bo nadpisze ukrywanie! */
+    overflow-y: auto; /* Tylko przewijanie */
+    gap: 24px;
 }
 
 /* Formatowanie pola z treścią zgłoszenia */
@@ -720,7 +707,7 @@ a:hover {
     background: white;
     padding: 16px;
     border: 1px solid var(--gray-border);
-    border-radius: var(--border-radius);
+    border-radius: 8px;
     min-height: 120px;
     white-space: pre-wrap;
     line-height: 1.6;
@@ -740,9 +727,9 @@ a:hover {
     gap: 10px;
 }
 
-/* Specyficzne ustawienia dla zakładki Historii */
+/* Specyficzne ustawienia dla Historii */
 #tab-history {
-    padding: 0; /* Historia na całą szerokość */
+    padding: 0; 
 }
 
 /* Resetujemy padding rodzica, żeby zakładki dotykały krawędzi */
