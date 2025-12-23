@@ -3,9 +3,28 @@ const { CosmosClient } = require("@azure/cosmos");
 const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
 const container = client.database("ServiceDeskDB").container("Tickets");
 
+/**
+ * Pobiera listę zgłoszeń z obsługą stronicowania, wyszukiwania i filtrowania.
+ * * Funkcja implementuje hybrydowy model przetwarzania danych:
+ * 1. Wstępna filtracja na poziomie bazy danych (SQL) dla prostych warunków.
+ * 2. Zaawansowana filtracja i paginacja w pamięci aplikacji (JavaScript).
+ * * Takie podejście (pobranie wszystkich pasujących metadanych i cięcie w JS) zostało wybrane,
+ * aby umożliwić elastyczne filtrowanie "Moje Grupy", które wymaga dynamicznego
+ * sprawdzania przynależności użytkownika do grup zdefiniowanych w oddzielnym dokumencie konfiguracji.
+ *
+ * @param {Object} context - Kontekst wykonania Azure Function.
+ * @param {Object} req - Obiekt żądania HTTP.
+ * @param {number} [req.query.page=1] - Numer strony (domyślnie 1).
+ * @param {string} [req.query.search] - Fraza wyszukiwania.
+ * @param {string} [req.query.field='id'] - Pole, po którym odbywa się wyszukiwanie.
+ * @param {string} [req.query.quickFilter] - Szybki filtr ('my_group', 'open', 'closed', 'all').
+ * @returns {Object} Obiekt zawierający:
+ * - tickets: Tablica zgłoszeń dla bieżącej strony.
+ * - totalCount: Całkowita liczba zgłoszeń spełniających kryteria.
+ * - totalPages: Liczba wszystkich stron (kluczowe dla renderowania paginacji UI).
+ */
 module.exports = async function (context, req) {
     try {
-        // --- 1. AUTORYZACJA ---
         const header = req.headers['x-ms-client-principal'];
         if (!header) return { status: 401, body: "User is not authenticated." };
         
@@ -20,8 +39,7 @@ module.exports = async function (context, req) {
         const isServiceDesk = clientPrincipal.userRoles.includes('sd');
         const userEmail = clientPrincipal.userDetails;
         
-        // --- 2. PARAMETRY ---
-        // Ustalamy rozmiar strony na 10
+        // Konfiguracja paginacji
         const page = parseInt(req.query.page) || 1;
         const pageSize = 10; 
         const offset = (page - 1) * pageSize;
@@ -29,20 +47,21 @@ module.exports = async function (context, req) {
         const rawSearch = req.query.search || '';
         const searchText = rawSearch.toLowerCase().trim();
         const searchField = req.query.field || 'id';
+        // Domyślny filtr: SD widzi "Swoje grupy", User widzi "Wszystkie swoje"
         const quickFilter = req.query.quickFilter || (isServiceDesk ? 'my_group' : 'all');
 
-        // --- 3. PRZYGOTOWANIE LOGIKI FILTRACJI ---
         let filterByMyGroups = false;
         let myAllowedGroups = []; 
 
-        // --- 4. FILTRY SQL (WHERE) ---
+        // Budowanie dynamicznego zapytania SQL
         let whereClauses = [];
         let parameters = [];
 
-        // Filtry techniczne
+        // Wykluczenie dokumentów systemowych i konfiguracyjnych
         whereClauses.push("c.id != 'global_settings'");
         whereClauses.push("(NOT IS_DEFINED(c.type) OR c.type != 'notification')");
 
+        // Zwykły użytkownik widzi tylko swoje zgłoszenia
         if (!isServiceDesk) {
             whereClauses.push("c.reportingUser.email = @userEmail");
             parameters.push({ name: "@userEmail", value: userEmail });
@@ -51,8 +70,11 @@ module.exports = async function (context, req) {
         if (isServiceDesk) {
             if (quickFilter === 'my_group') {
                 filterByMyGroups = true;
+                // Ukrywamy zamknięte, aby serwisanci skupili się na bieżącej pracy
                 whereClauses.push("c.status != 'Zamknięte' AND c.status != 'Rozwiązane' AND c.status != 'Odrzucone'");
 
+                // Pobranie konfiguracji grup w celu ustalenia uprawnień użytkownika.
+                // Robimy to w osobnym zapytaniu, ponieważ Cosmos DB nie obsługuje JOIN-ów między kontenerami/dokumentami.
                 try {
                     const { resources: settings } = await container.items.query(
                         "SELECT * FROM c WHERE c.id = 'global_settings'",
@@ -63,13 +85,14 @@ module.exports = async function (context, req) {
                         const config = settings[0];
                         if (config.groups && Array.isArray(config.groups)) {
                             const userEmailLower = userEmail.toLowerCase().trim();
+                            // Znajdź grupy, do których należy bieżący użytkownik
                             myAllowedGroups = config.groups
                                 .filter(g => g.members && g.members.some(m => m.toLowerCase().trim() === userEmailLower))
                                 .map(g => g.name.toLowerCase().trim());
                         }
                     }
                 } catch (err) {
-                    context.log.error("Błąd grup:", err);
+                    context.log.error("Błąd pobierania konfiguracji grup:", err);
                 }
             } 
             else if (quickFilter === 'open') {
@@ -80,7 +103,7 @@ module.exports = async function (context, req) {
             }
         }
 
-        // --- 5. WYSZUKIWANIE TEKSTOWE ---
+        // Obsługa wyszukiwania pełnotekstowego
         if (searchText) {
             let condition = "";
             switch (searchField) {
@@ -107,7 +130,7 @@ module.exports = async function (context, req) {
             whereString = " WHERE " + whereClauses.join(" AND ");
         }
 
-        // --- 6. POBIERANIE DANYCH (Fetch All & Slice in JS) ---
+        // Pobieramy tylko niezbędne pola do listy, aby zredukować zużycie RU i transfer danych
         const query = `SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c ${whereString}`;
 
         const { resources: rawTickets } = await container.items.query(
@@ -115,10 +138,11 @@ module.exports = async function (context, req) {
             { enableCrossPartitionQuery: true }
         ).fetchAll();
 
-        // --- 7. PRZETWARZANIE W PAMIĘCI ---
         let processedTickets = rawTickets;
 
-        // A. Filtrowanie grup (jeśli wybrano filtr "Moje grupy")
+        // Filtracja w pamięci dla "Moje Grupy".
+        // Ponieważ lista grup użytkownika jest dynamiczna i pochodzi z innego dokumentu,
+        // efektywniej jest przefiltrować wyniki w JS niż budować skomplikowany WHERE IN (...).
         if (filterByMyGroups) {
             if (myAllowedGroups.length === 0) {
                 processedTickets = [];
@@ -132,27 +156,27 @@ module.exports = async function (context, req) {
             }
         }
 
-        // B. Sortowanie (od najnowszych)
+        // Sortowanie malejąco po dacie utworzenia
         processedTickets.sort((a, b) => {
             const dateA = a.dates && a.dates.createdAt ? new Date(a.dates.createdAt).getTime() : 0;
             const dateB = b.dates && b.dates.createdAt ? new Date(b.dates.createdAt).getTime() : 0;
             return dateB - dateA;
         });
 
-        // C. OBLICZANIE STRON (Kluczowe dla naprawy błędu)
+        // Symulacja paginacji (Slice).
+        // Obliczamy całkowitą liczbę stron na podstawie przefiltrowanego zbioru danych.
+        // Jest to niezbędne dla poprawnego działania komponentu paginacji na frontendzie.
         const totalCount = processedTickets.length;
-        const totalPages = Math.ceil(totalCount / pageSize); // Obliczamy ile jest stron
+        const totalPages = Math.ceil(totalCount / pageSize);
         
-        // Wycinamy odpowiedni kawałek tablicy dla aktualnej strony
         const paginatedTickets = processedTickets.slice(offset, offset + pageSize);
 
-        // --- 8. ZWROT DANYCH ---
         context.res = {
             body: {
                 tickets: paginatedTickets,
                 totalCount: totalCount,
                 currentPage: page,
-                totalPages: totalPages // Tu wysyłamy informację, której brakowało
+                totalPages: totalPages
             }
         };
 

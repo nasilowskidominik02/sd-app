@@ -1,29 +1,53 @@
-/* =========================================
-   1. ZMIENNE I RESET (Global Styles)
-   ========================================= */
+/**
+ * GŁÓWNY ARKUSZ STYLÓW APLIKACJI SERVICE DESK
+ * * Spis treści:
+ * 1. Zmienne globalne i Reset (Design System)
+ * 2. Główny Layout (Flexbox Architecture)
+ * 3. Komponent Tabeli (Fixed Layout Strategy)
+ * 4. Komponenty UI i Modale
+ * 5. System Zakładek (Tab System)
+ * 6. Responsywność (Mobile Breakpoints)
+ * 7. Style wydruku (Print Media)
+ */
+
+/* ==========================================================================
+   1. ZMIENNE GLOBALNE I RESET
+   Definiuje paletę kolorów, typografię oraz podstawowe zachowanie box-modelu.
+   ========================================================================== */
 :root {
+    /* Paleta kolorów (Brand & UI) */
     --primary-blue: #3b82f6;
     --primary-blue-hover: #2563eb;
+    
+    /* Tła i Obramowania */
     --light-gray-bg: #f4f6f8;
     --medium-gray-bg: #e9ecef; 
     --gray-border: #dee2e6; 
+    
+    /* Typografia */
     --text-dark: #1f2937;
     --text-light: #6b7280;
     --white: #ffffff;
+    
+    /* Kolory statusów (Semantic colors) */
     --danger-red: #ef4444;
     --status-nieprzeczytane: #ffc107; 
     --status-otwarte: #28a745; 
     --status-zamknięte: #6c757d; 
+    
+    /* Metryki */
     --border-radius: 8px;
     --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
 }
 
+/* Globalny reset box-sizing dla przewidywalnego wymiarowania elementów */
 *, *::before, *::after {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
 }
 
+/* Konfiguracja głównego widoku: blokada scrolla na body, scrollowanie wewnątrz kontenerów */
 body {
     font-family: 'Inter', sans-serif;
     background-color: var(--light-gray-bg);
@@ -31,7 +55,7 @@ body {
     margin: 0;
     padding: 0;
     height: 100vh;
-    overflow: hidden;
+    overflow: hidden; /* Zapobiega podwójnym paskom przewijania */
 }
 
 a {
@@ -48,16 +72,18 @@ a:hover {
     display: none !important;
 }
 
-/* =========================================
-   2. UKŁAD GŁÓWNY (Layout)
-   ========================================= */
+/* ==========================================================================
+   2. GŁÓWNY UKŁAD (LAYOUT)
+   Struktura oparta na Flexbox: Header (góra) + Body (dół), gdzie Body dzieli się
+   na Sidebar (lewo) i Main Content (prawo).
+   ========================================================================== */
 .app-layout {
     display: flex;
     flex-direction: column;
     height: 100vh;
 }
 
-/* Header */
+/* --- Header --- */
 .app-header {
     display: flex;
     justify-content: space-between;
@@ -65,7 +91,7 @@ a:hover {
     padding: 10px 20px;
     background-color: var(--white);
     border-bottom: 1px solid var(--gray-border);
-    flex-shrink: 0;
+    flex-shrink: 0; /* Zapobiega zmniejszaniu nagłówka przy braku miejsca */
     z-index: 20;
 }
 
@@ -92,7 +118,7 @@ a:hover {
 }
 .btn-logout:hover { background-color: var(--light-gray-bg); }
 
-/* Body */
+/* --- Body Container --- */
 .app-body {
     display: flex;
     flex-grow: 1;
@@ -100,6 +126,7 @@ a:hover {
     position: relative;
 }
 
+/* Kontener centrujący (używany np. przy ekranie logowania lub błędach) */
 .app-body-centered {
     display: flex;
     justify-content: center;
@@ -108,7 +135,7 @@ a:hover {
     overflow-y: auto;
 }
 
-/* Sidebar */
+/* --- Sidebar (Nawigacja boczna) --- */
 .sidebar {
     width: 220px;
     background-color: var(--white);
@@ -139,11 +166,11 @@ a:hover {
     color: var(--text-dark);
 }
 
-/* Main Content */
+/* --- Main Content (Główna treść) --- */
 .main-content {
     flex-grow: 1;
     padding: 20px;
-    overflow-y: auto;
+    overflow-y: auto; /* Scrollowanie tylko w obszarze treści */
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -154,6 +181,7 @@ a:hover {
     margin-bottom: 16px;
 }
 
+/* Toolbar (Pasek narzędzi nad tabelą) */
 .toolbar {
     display: flex;
     justify-content: space-between;
@@ -166,17 +194,16 @@ a:hover {
 .search-container {
     display: flex;
     gap: 8px;
-    align-items: center; /* Wyrównanie w pionie */
+    align-items: center;
 }
 
-/* Styl dla nowego selecta */
 .search-select {
     padding: 6px 10px;
     border: 1px solid var(--gray-border);
     border-radius: var(--border-radius);
     background-color: var(--white);
     font-size: 13px;
-    height: 32px; /* Żeby pasował wysokością do inputa */
+    height: 32px;
     cursor: pointer;
 }
 
@@ -186,7 +213,7 @@ a:hover {
     border-radius: var(--border-radius);
     min-width: 200px;
     font-size: 13px;
-    height: 32px; /* Wymuszona wysokość */
+    height: 32px;
 }
 
 #search-btn {
@@ -194,14 +221,6 @@ a:hover {
     padding: 0 16px;
     display: flex;
     align-items: center;
-}
-
-#search-input {
-    padding: 6px 10px;
-    border: 1px solid var(--gray-border);
-    border-radius: var(--border-radius);
-    min-width: 200px;
-    font-size: 13px;
 }
 
 .app-footer {
@@ -214,10 +233,11 @@ a:hover {
     flex-shrink: 0;
 }
 
-/* =========================================
-   3. TABELA (FIXED LAYOUT & WRAPPING)
-   ========================================= */
-
+/* ==========================================================================
+   3. KOMPONENT TABELI ZGŁOSZEŃ
+   Implementuje strategię 'table-layout: fixed' dla wydajności i kontroli
+   szerokości kolumn. Obsługuje zawijanie długich tekstów (e-maile, tytuły).
+   ========================================================================== */
 .table-container {
     background-color: var(--white);
     border-radius: var(--border-radius);
@@ -228,7 +248,8 @@ a:hover {
 .ticket-table {
     width: 100%;
     border-collapse: collapse;
-    table-layout: fixed; /* Wymusza szerokości kolumn */
+    /* Kluczowe dla wydajności przy dużej liczbie wierszy i sztywnych kolumnach */
+    table-layout: fixed; 
 }
 
 .ticket-table th, .ticket-table td {
@@ -236,13 +257,14 @@ a:hover {
     text-align: left;
     border-bottom: 1px solid var(--gray-border);
     font-size: 12px;
-    vertical-align: top; /* Ważne: tekst od góry */
+    vertical-align: top;
     
+    /* Zapobiega rozpychaniu tabeli przez długie ciągi znaków */
     white-space: normal;
     overflow-wrap: break-word; 
 }
 
-/* Specjalne formatowanie dla MAILI (Użytkownik - 4, Odpowiedzialny - 6) */
+/* Specjalne reguły łamania tekstu dla kolumn z adresami e-mail */
 .ticket-table td:nth-child(4),
 .ticket-table td:nth-child(6) {
     word-break: normal;
@@ -250,11 +272,11 @@ a:hover {
     line-height: 1.35;
 }
 
-/* Specjalne formatowanie dla DAT (Utworzono - 8, SLA - 9, Zamknięto - 10) */
+/* Poprawa czytelności dat (data i godzina w osobnych liniach wizualnych dzięki line-height) */
 .ticket-table td:nth-child(8),
 .ticket-table td:nth-child(9),
 .ticket-table td:nth-child(10) {
-    line-height: 1.4; /* Odstęp między datą a godziną */
+    line-height: 1.4;
 }
 
 .ticket-table thead th {
@@ -265,20 +287,19 @@ a:hover {
     font-size: 11px;
 }
 
-/* STEROWANIE SZEROKOŚCIĄ KOLUMN */
+/* Definicja szerokości kolumn (Suma musi wynosić 100%) */
 .ticket-table th:nth-child(1) { width: 6%; }  /* ID */
 .ticket-table th:nth-child(2) { width: 9%; }  /* Status */
 .ticket-table th:nth-child(3) { width: 14%; } /* Tytuł */
-.ticket-table th:nth-child(4) { width: 11%; } /* User (Zwiększono z 10%) */
+.ticket-table th:nth-child(4) { width: 11%; } /* User */
 .ticket-table th:nth-child(5) { width: 9%; }  /* Kategoria */
-.ticket-table th:nth-child(6) { width: 11%; } /* Odp. (Zmniejszono z 12%) */
-.ticket-table th:nth-child(7) { width: 10%; } /* Grupa (Zwiększono) */
+.ticket-table th:nth-child(6) { width: 11%; } /* Odpowiedzialny */
+.ticket-table th:nth-child(7) { width: 10%; } /* Grupa */
 .ticket-table th:nth-child(8) { width: 10%; } /* Utworzono */
 .ticket-table th:nth-child(9) { width: 10%; } /* SLA */
 .ticket-table th:nth-child(10){ width: 10%; } /* Zamknięto */
 
-
-/* SLA Highlighting */
+/* Wyróżnianie wierszy ze względu na status SLA */
 .ticket-table tbody tr.sla-warning { background-color: #fef9c3; font-weight: 500; }
 .ticket-table tbody tr.sla-danger { background-color: #fee2e2; font-weight: 500; }
 .ticket-table tbody tr.sla-warning:hover { background-color: #fef08a; }
@@ -286,7 +307,7 @@ a:hover {
 .ticket-table tbody tr:hover { background-color: #f9fafb; }
 .ticket-table tbody tr.ticket-row { cursor: pointer; }
 
-/* Status Badges */
+/* Badges (Etykiety statusów) */
 .status-badge {
     display: inline-block; padding: 2px 6px; border-radius: 4px;
     font-weight: 600; font-size: 10px; color: var(--text-dark); text-transform: uppercase;
@@ -295,10 +316,11 @@ a:hover {
 .status-badge.status-otwarte { background-color: var(--status-otwarte); }
 .status-badge.status-zamknięte { background-color: var(--status-zamknięte); color: white; }
 
-/* =========================================
-   4. MODALE & UI
-   ========================================= */
-/* Login */
+/* ==========================================================================
+   4. MODALE, FORMULARZE I ELEMENTY UI
+   ========================================================================== */
+
+/* --- Login & Error Panels --- */
 .login-container {
     max-width: 450px; width: 90%; background-color: var(--white); padding: 40px;
     border-radius: var(--border-radius); box-shadow: var(--shadow); text-align: center;
@@ -311,7 +333,6 @@ a:hover {
 }
 .button-login:hover { background-color: var(--primary-blue-hover); }
 
-/* Panel Błędu */
 .panel {
     width: 90%; max-width: 500px; background-color: var(--white); border-radius: var(--border-radius);
     box-shadow: var(--shadow); padding: 40px; text-align: center; margin: 20px auto;
@@ -319,13 +340,13 @@ a:hover {
 .panel h2 { font-size: 24px; font-weight: 600; margin-bottom: 16px; }
 .logout-button { background-color: var(--danger-red); color: var(--white); border: none; padding: 12px; border-radius: var(--border-radius); display: inline-block; margin-top: 16px;}
 
-/* Paginacja */
+/* --- Paginacja --- */
 .pagination {
     margin-top: 20px;
     display: flex;
-    flex-direction: column; /* To ustawia elementy jeden pod drugim */
-    align-items: center;    /* To centruje je na środku */
-    gap: 12px;              /* Odstęp między tekstem a przyciskami */
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
 }
 
 .pagination-info {
@@ -339,7 +360,6 @@ a:hover {
     gap: 10px;
 }
 
-/* Styl przycisków paginacji (bazujący na btn-primary) */
 .pagination button {
     background-color: var(--primary-blue);
     color: var(--white);
@@ -356,15 +376,14 @@ a:hover {
     background-color: var(--primary-blue-hover);
 }
 
-/* Styl dla nieaktywnego przycisku (np. gdy nie ma następnej strony) */
 .pagination button:disabled {
-    background-color: #cbd5e1; /* Jasny szary */
-    color: #64748b;            /* Ciemniejszy szary tekst */
+    background-color: #cbd5e1;
+    color: #64748b;
     cursor: not-allowed;
     opacity: 0.7;
 }
 
-/* Formularze */
+/* --- Formularze --- */
 .form-container { max-width: 800px; width: 100%; }
 .form-group { margin-bottom: 20px; }
 .form-group label { display: block; font-weight: 500; margin-bottom: 8px; font-size: 14px; }
@@ -372,12 +391,15 @@ a:hover {
     width: 100%; padding: 10px; border: 1px solid var(--gray-border);
     border-radius: var(--border-radius); font-size: 14px; font-family: 'Inter', sans-serif;
 }
+
+/* Custom File Input Styling */
 .file-input-wrapper { position: relative; display: inline-block; width: 100%; }
 .file-input-label {
     display: inline-block; width: 100%; padding: 10px; background-color: var(--light-gray-bg);
     border: 1px solid var(--gray-border); border-radius: var(--border-radius); cursor: pointer; text-align: center; font-size: 14px;
 }
 .file-input { opacity: 0; width: 0.1px; height: 0.1px; position: absolute; }
+
 .btn-primary {
     background-color: var(--primary-blue); color: var(--white); border: none; padding: 10px 20px;
     border-radius: var(--border-radius); font-size: 14px; font-weight: 500; cursor: pointer;
@@ -387,7 +409,7 @@ a:hover {
 .form-status.success { color: #155724; }
 .form-status.error { color: #721c24; }
 
-/* Modale */
+/* --- Modale --- */
 .modal-overlay {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background-color: rgba(0, 0, 0, 0.5); display: flex;
@@ -405,6 +427,8 @@ a:hover {
 .modal-header h2 { font-size: 18px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80%; }
 .btn-close { background: transparent; border: none; font-size: 24px; cursor: pointer; color: var(--text-light); }
 .modal-body { display: flex; flex-grow: 1; overflow: hidden; }
+
+/* Panel akcji bocznych w modalu */
 .modal-actions-panel {
     width: 280px; padding: 24px; border-right: 1px solid var(--gray-border);
     display: flex; flex-direction: column; gap: 16px; flex-shrink: 0; overflow-y: auto;
@@ -413,6 +437,8 @@ a:hover {
     width: 100%; padding: 10px; text-align: left; background-color: var(--light-gray-bg);
     border: 1px solid var(--gray-border); border-radius: var(--border-radius); cursor: pointer; font-size: 14px;
 }
+
+/* Logika widoczności przycisków w zależności od statusu zgłoszenia */
 .modal-actions-panel.is-closed > *:not([data-action="open-ticket"]) { display: none; }
 .modal-actions-panel:not(.is-closed) .btn-action[data-action="open-ticket"] { display: none; }
 
@@ -424,7 +450,7 @@ a:hover {
 .modal-status.success { color: #155724; background-color: #d4edda; }
 .modal-status.error { color: #721c24; background-color: #f8d7da; }
 
-/* Komentarze */
+/* --- Sekcja Komentarzy (Chat-style) --- */
 .comments-section {
     margin-top: 32px; display: flex; flex-direction: column; flex-grow: 1; min-height: 0; 
 }
@@ -449,7 +475,7 @@ a:hover {
 .radio-group { display: flex; gap: 24px; margin-bottom: 16px; }
 .radio-group label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 
-/* Powiadomienia */
+/* --- System Powiadomień (Dropdown) --- */
 .notification-wrapper { position: relative; margin-right: 16px; display: flex; align-items: center; }
 .notification-btn { background: none; border: none; cursor: pointer; padding: 8px; position: relative; color: var(--text-dark); }
 .notification-btn:hover { color: var(--primary-blue); background-color: var(--light-gray-bg); border-radius: 50%; }
@@ -472,75 +498,19 @@ a:hover {
 .notification-time { font-size: 11px; color: var(--text-light); }
 .notification-empty { padding: 24px; text-align: center; color: var(--text-light); font-size: 13px; }
 
-/* =================================================================
-   5. RESPONSYWNOŚĆ (MEDIA QUERIES)
-   ================================================================= */
+/* ==========================================================================
+   5. SYSTEM ZAKŁADEK (TABS)
+   Implementacja przełączania widoków (Szczegóły vs Historia) wewnątrz modalu.
+   Kluczowe: Kontrolowanie widoczności za pomocą klas 'active'.
+   ========================================================================== */
 
-@media (max-width: 768px) {
-    .app-layout { height: auto; min-height: 100vh; }
-    .app-body { flex-direction: column; height: auto; overflow: visible; }
-    .app-body-centered { overflow-y: visible; }
-
-    /* Header */
-    .app-header { flex-direction: column; gap: 12px; padding: 16px; }
-    .header-user-info { width: 100%; justify-content: space-between; }
-    .notification-dropdown { right: -100px; }
-
-    /* Sidebar */
-    .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--gray-border); padding: 12px; overflow-x: auto; }
-    .sidebar-nav { flex-direction: row; gap: 8px; }
-    .nav-item { white-space: nowrap; padding: 8px 12px; font-size: 13px; }
-
-    /* Content */
-    .main-content { padding: 16px; height: auto; overflow: visible; padding-bottom: 100px; }
-    .main-content h1 { font-size: 20px; }
-    .toolbar { flex-direction: column; align-items: stretch; }
-    .search-container { flex-direction: column; }
-    #search-input { min-width: 0; width: 100%; }
-    #search-btn { width: 100%; }
-
-    /* Tabela Mobile */
-    .table-container { overflow-x: auto; display: block; }
-    .ticket-table { min-width: 800px; }
-
-    /* Modal Mobile */
-    .modal-content { width: 100%; height: 100%; max-width: none; border-radius: 0; }
-    .modal-body { flex-direction: column; overflow-y: auto; }
-    .modal-actions-panel { width: 100%; border-right: none; border-bottom: 1px solid var(--gray-border); padding: 16px; height: auto; }
-    .modal-details-panel { padding: 16px; overflow-y: visible; }
-    .floating-save-bar { padding: 12px; flex-direction: column; gap: 8px; align-items: stretch; }
-    #save-status { margin-right: 0; text-align: center; margin-bottom: 8px; }
-    .floating-save-bar button { width: 100%; }
-}
-
-
-@media print {
-    tr {
-        page-break-inside: avoid;
-        break-inside: avoid;
-    }
-    
-    /* Ukrywa przyciski i nawigację na wydruku */
-    .sidebar, .app-header, .report-controls, .app-footer, .floating-save-bar {
-        display: none !important;
-    }
-    
-    .app-body, .main-content, .table-container {
-        padding: 0;
-        margin: 0;
-        overflow: visible !important;
-        height: auto !important;
-        width: 100% !important;
-    }
-}
-
-/* Kontener zakładek nad treścią */
+/* Pasek nawigacji zakładek */
 .modal-tabs {
     display: flex;
     border-bottom: 1px solid var(--gray-border);
     background-color: var(--light-gray-bg);
     padding: 0 16px;
-    flex-shrink: 0; /* Nie zgniataj paska zakładek */
+    flex-shrink: 0;
 }
 
 .tab-btn {
@@ -566,150 +536,35 @@ a:hover {
     font-weight: 600;
 }
 
-/* Kontener treści w zakładce */
+/* Kontenery treści zakładek */
 .tab-content {
     display: none; /* Domyślnie ukryte */
-    flex-direction: column;
-    height: 100%;
-    overflow: hidden; /* Ważne: to wnętrze ma scrollować, a nie cały modal */
-    padding: 24px;
-}
-
-.tab-content.active {
-    display: flex;
-}
-
-/* Specyficzne style dla zakładki Historii (żeby wyglądała jak czat) */
-#tab-history.active {
-    padding: 0; /* Reset paddingu dla historii, żeby wykorzystać całą przestrzeń */
-    background-color: #fff;
-}
-
-/* Lista komentarzy rozciąga się na dostępną przestrzeń */
-.comments-list {
-    flex-grow: 1;
-    overflow-y: auto;
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    background-color: #f9fafb; /* Lekkie tło pod czatem */
-}
-
-/* Formularz przyklejony do dołu */
-.comment-form {
-    flex-shrink: 0;
-    padding: 16px;
-    border-top: 1px solid var(--gray-border);
-    background-color: var(--white);
-}
-
-/* Modyfikacja istniejącej klasy .modal-details-panel */
-.modal-details-panel {
-    padding: 0 !important; /* Usuwamy padding rodzica, bo zakładki go mają */
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    overflow: hidden; /* Blokujemy scroll rodzica */
-}
-
-/* Nowa klasa dla pudełka z treścią zgłoszenia (zamiast stylów inline) */
-.ticket-content-box {
-    background: white;
-    padding: 16px;
-    border: 1px solid var(--gray-border);
-    border-radius: var(--border-radius);
-    min-height: 120px; /* Nieco wyższe minimalne pole */
-    white-space: pre-wrap; /* Zachowuje formatowanie tekstu */
-    line-height: 1.6;
-    word-wrap: break-word; /* Zapobiega wyjeżdżaniu długich słów poza ekran */
-    font-size: 14px;
-}
-
-/* Style dla nagłówków sekcji wewnątrz szczegółów */
-#tab-details h4 {
-    margin-bottom: 12px; /* Odstęp pod nagłówkiem */
-    color: var(--text-dark);
-    font-weight: 600;
-}
-
-/* Kontener na załączniki */
-#modal-attachments {
-    display: flex;
-    flex-wrap: wrap; /* Zawijaj załączniki do nowej linii, jeśli się nie mieszczą */
-    gap: 10px; /* Odstęp między kafelkami załączników */
-}
-
-/* =========================================
-   6. ZAKŁADKI (TABS) - POPRAWIONA WERSJA OSTATECZNA
-   ========================================= */
-
-/* Pasek z przyciskami zakładek */
-.modal-tabs {
-    display: flex;
-    border-bottom: 1px solid var(--gray-border);
-    background-color: var(--light-gray-bg);
-    padding: 0 16px;
-    flex-shrink: 0;
-}
-
-/* Wygląd przycisku */
-.tab-btn {
-    padding: 12px 20px;
-    border: none;
-    background: none;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text-light);
-    border-bottom: 3px solid transparent;
-    transition: all 0.2s;
-}
-
-.tab-btn:hover {
-    color: var(--primary-blue);
-    background-color: rgba(59, 130, 246, 0.05);
-}
-
-.tab-btn.active {
-    color: var(--primary-blue);
-    border-bottom-color: var(--primary-blue);
-    font-weight: 600;
-}
-
-/* --- KLUCZOWY MOMENT: Logika ukrywania --- */
-
-/* 1. Domyślnie UKRYJ wszystkie treści zakładek */
-.tab-content {
-    display: none; 
     flex-direction: column;
     height: 100%;
     overflow: hidden;
     padding: 24px;
 }
 
-/* 2. POKAŻ treść tylko, gdy ma klasę 'active' */
+/* Aktywacja widoczności */
 .tab-content.active {
-    display: flex; 
+    display: flex;
 }
 
-/* ----------------------------------------- */
+/* --- Konfiguracja poszczególnych zakładek --- */
 
-/* Specyficzne ustawienia dla Szczegółów */
+/* Zakładka Szczegóły: Przewijanie treści, formatowanie opisu */
 #tab-details {
-    /* WAŻNE: Tutaj NIE MOŻE być 'display: flex', bo nadpisze ukrywanie! */
-    overflow-y: auto; /* Tylko przewijanie */
+    overflow-y: auto;
     gap: 24px;
 }
 
-/* Formatowanie pola z treścią zgłoszenia */
 .ticket-content-box {
     background: white;
     padding: 16px;
     border: 1px solid var(--gray-border);
     border-radius: 8px;
     min-height: 120px;
-    white-space: pre-wrap;
+    white-space: pre-wrap; /* Zachowuje formatowanie nowej linii */
     line-height: 1.6;
     word-wrap: break-word;
     font-size: 14px;
@@ -727,15 +582,93 @@ a:hover {
     gap: 10px;
 }
 
-/* Specyficzne ustawienia dla Historii */
+/* Zakładka Historia: Usuwa padding, aby czat wypełnił całą przestrzeń */
 #tab-history {
     padding: 0; 
 }
 
-/* Resetujemy padding rodzica, żeby zakładki dotykały krawędzi */
+/* Reset kontenera nadrzędnego dla zakładek, aby umożliwić pełne wypełnienie */
 .modal-details-panel {
     padding: 0 !important; 
     display: flex;
     flex-direction: column;
     overflow: hidden; 
+}
+
+/* Nadpisanie listy komentarzy dla zakładki historii */
+#tab-history .comments-list {
+    background-color: #f9fafb;
+    padding: 20px;
+}
+#tab-history .comment-form {
+    background-color: var(--white);
+    border-top: 1px solid var(--gray-border);
+    padding: 16px;
+}
+
+/* ==========================================================================
+   6. RESPONSYWNOŚĆ (MOBILE BREAKPOINTS)
+   Dostosowanie układu dla urządzeń o szerokości <= 768px.
+   ========================================================================== */
+@media (max-width: 768px) {
+    /* Reset wysokości na mobile */
+    .app-layout { height: auto; min-height: 100vh; }
+    .app-body { flex-direction: column; height: auto; overflow: visible; }
+    .app-body-centered { overflow-y: visible; }
+
+    /* Header w pionie */
+    .app-header { flex-direction: column; gap: 12px; padding: 16px; }
+    .header-user-info { width: 100%; justify-content: space-between; }
+    .notification-dropdown { right: -100px; }
+
+    /* Sidebar jako pasek poziomy lub zwijany */
+    .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--gray-border); padding: 12px; overflow-x: auto; }
+    .sidebar-nav { flex-direction: row; gap: 8px; }
+    .nav-item { white-space: nowrap; padding: 8px 12px; font-size: 13px; }
+
+    /* Content */
+    .main-content { padding: 16px; height: auto; overflow: visible; padding-bottom: 100px; }
+    .main-content h1 { font-size: 20px; }
+    .toolbar { flex-direction: column; align-items: stretch; }
+    .search-container { flex-direction: column; }
+    #search-input { min-width: 0; width: 100%; }
+    #search-btn { width: 100%; }
+
+    /* Tabela: Włączenie scrolla poziomego na małych ekranach */
+    .table-container { overflow-x: auto; display: block; }
+    .ticket-table { min-width: 800px; }
+
+    /* Modal na pełny ekran mobile */
+    .modal-content { width: 100%; height: 100%; max-width: none; border-radius: 0; }
+    .modal-body { flex-direction: column; overflow-y: auto; }
+    .modal-actions-panel { width: 100%; border-right: none; border-bottom: 1px solid var(--gray-border); padding: 16px; height: auto; }
+    .modal-details-panel { padding: 16px; overflow-y: visible; }
+    .floating-save-bar { padding: 12px; flex-direction: column; gap: 8px; align-items: stretch; }
+    #save-status { margin-right: 0; text-align: center; margin-bottom: 8px; }
+    .floating-save-bar button { width: 100%; }
+}
+
+/* ==========================================================================
+   7. STYLE WYDRUKU (PRINT MEDIA)
+   Optymalizacja widoku pod kątem generowania raportów i drukowania.
+   ========================================================================== */
+@media print {
+    tr {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+    
+    /* Ukrywanie elementów interfejsu (nawigacja, przyciski) */
+    .sidebar, .app-header, .report-controls, .app-footer, .floating-save-bar {
+        display: none !important;
+    }
+    
+    /* Reset kontenerów do pełnej szerokości papieru */
+    .app-body, .main-content, .table-container {
+        padding: 0;
+        margin: 0;
+        overflow: visible !important;
+        height: auto !important;
+        width: 100% !important;
+    }
 }

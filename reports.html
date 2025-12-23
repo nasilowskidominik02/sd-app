@@ -8,8 +8,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-GsLlZN/3F2ErC5ifS5QtgpiJtWd43JWSuIgh7mbzZ8zBps+dvLusV+eNQATqgA/HdeKFVgA5v3S/cIrLF7QnIg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    
     <style>
+        /* --- Style Kontrolek Raportowania --- */
         .report-controls {
             background-color: var(--white);
             padding: 24px;
@@ -19,7 +22,7 @@
             display: flex;
             gap: 16px;
             flex-wrap: wrap;
-            align-items: flex-end;
+            align-items: flex-end; /* Wyrównanie przycisków do dołu inputów */
         }
         .control-group {
             display: flex;
@@ -30,15 +33,21 @@
             font-weight: 500;
             font-size: 14px;
         }
+
+        /* --- Style Tabeli Wyników --- */
         .report-table th { text-align: left; padding: 12px; background: var(--light-gray-bg); }
         .report-table td { padding: 12px; border-bottom: 1px solid var(--gray-border); }
+        
+        /* Wizualizacja paskowa (Bar Chart) wewnątrz tabeli */
         .bar-container { width: 100px; height: 6px; background: #eee; border-radius: 3px; overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 8px;}
         .bar-fill { height: 100%; background: var(--primary-blue); }
+        
+        /* Wskaźniki SLA */
         .sla-bad { color: var(--danger-red); font-weight: bold; }
         .sla-good { color: var(--status-otwarte); font-weight: bold; }
         
         .export-buttons {
-            margin-left: auto;
+            margin-left: auto; /* Przesunięcie przycisków eksportu maksymalnie w prawo */
             display: flex;
             gap: 8px;
         }
@@ -111,8 +120,9 @@
                 </div>
 
                 <div class="table-container" id="report-results">
+                    
                     <div style="padding: 24px; border-bottom: 2px solid var(--gray-border); display:none; margin-bottom: 16px;" id="report-header-print">
-                        </div>
+                    </div>
 
                     <table class="ticket-table report-table">
                         <thead>
@@ -137,18 +147,32 @@
     </div>
 
     <script>
+        /**
+         * Inicjalizacja strony (IIFE).
+         * Sprawdza status uwierzytelnienia i rolę użytkownika.
+         * Dostęp do raportów jest ściśle ograniczony dla roli 'sd'.
+         */
         (async function() {
             const resp = await fetch('/.auth/me');
             const data = await resp.json();
             const user = data.clientPrincipal;
+            
+            // Przekierowanie, jeśli brak uprawnień
             if (!user || !user.userRoles.includes('sd')) {
                 window.location.href = 'index.html';
                 return;
             }
             document.getElementById('userName').textContent = user.userDetails;
+            
+            // Inicjalne ustawienie dat na bieżący miesiąc
             updateDatesFromPeriod(); 
         })();
 
+        /**
+         * Automatycznie przelicza i ustawia daty w inputach na podstawie wybranego okresu (select).
+         * Ułatwia szybkie generowanie raportów bez konieczności ręcznego wybierania dni w kalendarzu.
+         * Obsługuje logikę: Dziś, Tydzień, Miesiąc, Rok.
+         */
         function updateDatesFromPeriod() {
             const period = document.getElementById('period-select').value;
             const startInput = document.getElementById('date-start');
@@ -165,6 +189,7 @@
             if (period === 'today') {
                 start.setHours(0, 0, 0, 0);
             } else if (period === 'week') {
+                // Ustawienie na poniedziałek bieżącego tygodnia
                 const day = now.getDay() || 7; 
                 if (day !== 1) start.setHours(-24 * (day - 1));
                 else start.setHours(0,0,0,0);
@@ -180,10 +205,15 @@
             endInput.valueAsDate = end;
         }
 
+        /**
+         * Pobiera zagregowane dane z API i renderuje tabelę wyników.
+         * Odpowiada za wizualizację danych (paski postępu) oraz formatowanie wskaźników SLA.
+         */
         async function generateReport() {
             const tbody = document.getElementById('report-tbody');
             tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Ładowanie danych...</td></tr>';
 
+            // Normalizacja daty końcowej, aby obejmowała cały ostatni dzień zakresu
             const payload = {
                 startDate: new Date(document.getElementById('date-start').value).toISOString(),
                 endDate: new Date(document.getElementById('date-end').value + 'T23:59:59.999Z').toISOString(), 
@@ -206,6 +236,7 @@
                     return;
                 }
 
+                // Znalezienie maksymalnej wartości dla skalowania pasków wizualnych
                 const maxCount = Math.max(...data.map(d => d.count));
 
                 data.forEach(row => {
@@ -234,12 +265,15 @@
             }
         }
         
+        /**
+         * Zabezpiecza tekst przed atakami XSS przy renderowaniu HTML.
+         */
         function escapeHTML(str) {
             if (!str) return '---';
             return str.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
 
-        // --- ZMODYFIKOWANE FUNKCJE EKSPORTU ---
+        // --- MODUŁ EKSPORTU DANYCH (Client-Side) ---
 
         function getReportMeta() {
             const start = document.getElementById('date-start').value;
@@ -249,12 +283,18 @@
             return { start, end, typeText };
         }
 
+        /**
+         * Generuje plik PDF z widoku raportu używając biblioteki html2pdf.js.
+         * * Hack UI: Funkcja tymczasowo odkrywa ukryte elementy nagłówka i stopki (#report-header-print),
+         * generuje zrzut PDF, a następnie ponownie je ukrywa.
+         * Dzięki temu PDF wygląda jak oficjalny dokument, a widok na ekranie pozostaje czysty.
+         */
         function downloadPDF() {
             const element = document.getElementById('report-results');
             const header = document.getElementById('report-header-print');
             const footer = document.getElementById('report-footer-print');
             
-            // 1. Uzupełnienie danych w nagłówku PDF
+            // 1. Wstrzyknięcie metadanych do nagłówka wydruku
             const meta = getReportMeta();
             header.innerHTML = `
                 <h2 style="margin: 0 0 8px 0; font-size: 24px; color: #1f2937;">Raport Service Desk</h2>
@@ -264,7 +304,7 @@
                 </div>
             `;
 
-            // Pokazujemy nagłówek na chwilę
+            // 2. Tymczasowe pokazanie elementów dla generatora
             header.style.display = 'block';
             footer.style.display = 'block';
 
@@ -272,18 +312,24 @@
                 margin:       0.5,
                 filename:     `Raport_${meta.start}_${meta.end}.pdf`,
                 image:        { type: 'jpeg', quality: 0.98 },
-                html2canvas:  { scale: 2 },
+                html2canvas:  { scale: 2 }, // Wysoka rozdzielczość
                 jsPDF:        { unit: 'in', format: 'letter', orientation: 'landscape' }
             };
 
+            // 3. Generowanie i sprzątanie po zakończeniu (Promise)
             html2pdf().set(opt).from(element).save().then(() => {
                 header.style.display = 'none';
                 footer.style.display = 'none';
             });
         }
 
+        /**
+         * Eksportuje raport do samodzielnego pliku HTML.
+         * Tworzy Blob z pełną strukturą strony i stylami inline, co pozwala na
+         * otwarcie raportu offline i zachowanie jego wyglądu bez zależności zewnętrznych.
+         */
         function downloadHTML() {
-            // Pobieramy samą tabelę (bez ukrytych divów z PDF)
+            // Pobieramy tylko wyrenderowaną tabelę
             const table = document.querySelector('#report-results table').outerHTML;
             const meta = getReportMeta();
             const now = new Date().toLocaleString();
@@ -304,7 +350,7 @@
                         th { background-color: #f3f4f6; font-weight: 600; }
                         .sla-bad { color: #dc2626; font-weight: bold; }
                         .sla-good { color: #16a34a; font-weight: bold; }
-                        .bar-container { display: none; } /* Ukrywamy paski w prostym HTML */
+                        .bar-container { display: none; } /* Paski są zbędne w prostym wydruku */
                     </style>
                 </head>
                 <body>

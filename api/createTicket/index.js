@@ -5,6 +5,15 @@ const database = client.database("ServiceDeskDB");
 const countersContainer = database.container("Counters");
 const ticketsContainer = database.container("Tickets");
 
+/**
+ * Formatuje numer do postaci ciągu znaków o zadanej długości, uzupełniając go zerami z przodu.
+ * Jest to niezbędne do generowania identyfikatorów zgłoszeń (np. 2025-0042), 
+ * które muszą zachowywać stały format i sortować się poprawnie.
+ *
+ * @param {number} num - Liczba do sformatowania (np. 5).
+ * @param {number} size - Oczekiwana długość wynikowego ciągu (np. 4).
+ * @returns {string} Sformatowany ciąg znaków (np. "0005").
+ */
 function padNumber(num, size) {
     let s = num + "";
     while (s.length < size) s = "0" + s;
@@ -12,7 +21,13 @@ function padNumber(num, size) {
 }
 
 /**
- * ZAAWANSOWANE OBLICZANIE SLA (WORK CALENDAR)
+ * Oblicza datę SLA (gwarantowany czas rozwiązania) uwzględniając kalendarz pracy.
+ * Algorytm przesuwa termin realizacji, pomijając godziny nocne, weekendy oraz święta.
+ *
+ * @param {Date|string} startDate - Data początkowa (utworzenia zgłoszenia).
+ * @param {number} hoursToAdd - Czas SLA w godzinach (przypisany do kategorii).
+ * @param {Object} workConfig - Konfiguracja godzin pracy (startHour, endHour, holidays).
+ * @returns {Date} Obliczona data, do której zgłoszenie musi zostać rozwiązane.
  */
 function calculateAdvancedSLA(startDate, hoursToAdd, workConfig) {
     const startHour = workConfig?.startHour || 8;
@@ -28,6 +43,7 @@ function calculateAdvancedSLA(startDate, hoursToAdd, workConfig) {
         const isHoliday = holidays.includes(dateString);
         const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
 
+        // Jeśli to dzień wolny (weekend/święto), przesuń na następny dzień rano
         if (isWeekend || isHoliday) {
             currentDate.setDate(currentDate.getDate() + 1);
             currentDate.setHours(startHour, 0, 0, 0);
@@ -36,17 +52,20 @@ function calculateAdvancedSLA(startDate, hoursToAdd, workConfig) {
 
         const currentHour = currentDate.getHours();
 
+        // Przed godzinami pracy -> ustaw na początek zmiany
         if (currentHour < startHour) {
             currentDate.setHours(startHour, 0, 0, 0);
             continue;
         }
 
+        // Po godzinach pracy -> przesuń na następny dzień rano
         if (currentHour >= endHour) {
             currentDate.setDate(currentDate.getDate() + 1);
             currentDate.setHours(startHour, 0, 0, 0);
             continue;
         }
 
+        // Oblicz dostępny czas w bieżącym dniu
         const endOfWorkDay = new Date(currentDate);
         endOfWorkDay.setHours(endHour, 0, 0, 0);
 
@@ -66,6 +85,18 @@ function calculateAdvancedSLA(startDate, hoursToAdd, workConfig) {
     return currentDate;
 }
 
+/**
+ * Główna funkcja Azure Function obsługująca tworzenie nowego zgłoszenia.
+ * Odpowiada za:
+ * 1. Walidację danych wejściowych i uprawnień.
+ * 2. Pobranie ustawień globalnych (dla SLA i grup).
+ * 3. Generowanie sekwencyjnego ID z blokadą optymistyczną (zapobieganie duplikatom).
+ * 4. Zapis zgłoszenia w bazie Cosmos DB.
+ *
+ * @param {Object} context - Kontekst wykonania funkcji Azure.
+ * @param {Object} req - Obiekt żądania HTTP zawierający dane zgłoszenia.
+ * @returns {Object} Zwraca obiekt odpowiedzi HTTP (201 Created z utworzonym zgłoszeniem lub błąd).
+ */
 module.exports = async function (context, req) {
     const header = req.headers['x-ms-client-principal'];
     if (!header) {
@@ -84,11 +115,12 @@ module.exports = async function (context, req) {
     try {
         let finalReportingUserEmail = clientPrincipal.userDetails;
         
+        // Logika "w imieniu" (tylko dla SD)
         if (clientPrincipal.userRoles.includes('sd') && onBehalfOf && onBehalfOf.trim() !== "") {
             finalReportingUserEmail = onBehalfOf.trim();
         }
 
-        // KROK 1: Pobierz globalne ustawienia
+        // KROK 1: Konfiguracja
         const settingsQuery = { query: "SELECT * FROM c WHERE c.id = 'global_settings'" };
         const { resources: settingsItems } = await ticketsContainer.items.query(settingsQuery).fetchAll();
         
@@ -97,7 +129,7 @@ module.exports = async function (context, req) {
 
         const workConfig = globalSettings.workConfig || { startHour: 8, endHour: 16, holidays: [] };
 
-        // KROK 2: Kategoria i SLA
+        // KROK 2: Ustalanie kategorii
         const targetCategoryName = "Inne";
         let categoryConfig = globalSettings.categories.find(c => c.name === targetCategoryName);
         if (!categoryConfig) categoryConfig = globalSettings.categories[0];
@@ -105,16 +137,14 @@ module.exports = async function (context, req) {
         const selectedSlaHours = categoryConfig.sla;
         const selectedGroup = categoryConfig.assignedGroup;
 
-        // =================================================================================
-        // KROK 3: ID Zgłoszenia z zabezpieczeniem przed wyścigiem (Optimistic Concurrency)
-        // =================================================================================
+        // KROK 3: Generowanie ID (Optimistic Concurrency Control)
         let retryCount = 0;
         const maxRetries = 10;
         let newTicketId = null;
 
         while (retryCount < maxRetries) {
             try {
-                // A. Pobieramy licznik I JEGO ETAG (wersję)
+                // Pobieramy licznik wraz z jego ETagiem
                 const { resource: counterDoc, etag } = await countersContainer.item("ticketSequence", "ticketSequence").read();
                 
                 if (!counterDoc) {
@@ -124,7 +154,6 @@ module.exports = async function (context, req) {
                 const currentYear = new Date().getFullYear();
                 let nextNumber;
 
-                // Logika inkrementacji
                 if (counterDoc.year === currentYear) {
                     nextNumber = counterDoc.lastNumber + 1;
                 } else {
@@ -132,34 +161,28 @@ module.exports = async function (context, req) {
                     counterDoc.year = currentYear;
                 }
 
-                // Aktualizujemy obiekt w pamięci
                 counterDoc.lastNumber = nextNumber;
 
-                // B. Próbujemy zapisać Z WARUNKIEM ifMatch
-                // To rzuci błąd 412, jeśli etag w bazie jest inny niż ten, który odczytaliśmy
+                // Próba zapisu z warunkiem zgodności ETag
                 await countersContainer.item("ticketSequence", "ticketSequence").replace(counterDoc, { ifMatch: etag });
 
-                // Jeśli przeszliśmy tutaj, to znaczy, że się udało (nikt nas nie ubiegł)
                 newTicketId = `${currentYear}-${padNumber(nextNumber, 4)}`;
-                break; // Wychodzimy z pętli while
+                break; // Sukces
 
             } catch (err) {
-                // Kod 412: Precondition Failed (Ktoś zmienił dokument w międzyczasie)
+                // Obsługa konfliktu (412) - ponawiamy próbę
                 if (err.code === 412) {
                     retryCount++;
-                    // Kontynuujemy pętlę -> pobierzemy nowszą wersję i spróbujemy jeszcze raz
                     if (retryCount >= maxRetries) {
                         throw new Error("Serwer jest obciążony. Nie udało się wygenerować ID zgłoszenia. Spróbuj ponownie.");
                     }
                 } else {
-                    // Inny błąd - rzucamy dalej
                     throw err;
                 }
             }
         }
-        // =================================================================================
 
-        // KROK 4: Obliczamy SLA
+        // KROK 4: Finalizacja obiektu
         const now = new Date();
         const slaDate = calculateAdvancedSLA(now, selectedSlaHours, workConfig);
 

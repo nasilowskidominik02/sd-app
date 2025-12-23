@@ -7,6 +7,17 @@ const ticketsContainer = database.container("Tickets");
 
 // --- FUNKCJE POMOCNICZE ---
 
+/**
+ * Oblicza nowy termin realizacji (SLA) na podstawie kalendarza pracy.
+ * * Funkcja jest używana przy zmianie kategorii zgłoszenia, co wiąże się ze zmianą SLA.
+ * Algorytm dynamicznie przesuwa termin, pomijając dni wolne i godziny nocne,
+ * zapewniając sprawiedliwy czas na reakcję dla zespołu wsparcia.
+ *
+ * @param {Date|string} startDate - Data od której liczymy czas (data utworzenia zgłoszenia).
+ * @param {number} hoursToAdd - Ilość godzin roboczych do dodania.
+ * @param {Object} workConfig - Konfiguracja czasu pracy (godziny start/stop, święta).
+ * @returns {Date} Nowa data graniczna SLA.
+ */
 function calculateAdvancedSLA(startDate, hoursToAdd, workConfig) {
     const startHour = workConfig?.startHour || 8;
     const endHour = workConfig?.endHour || 16;
@@ -55,6 +66,15 @@ function calculateAdvancedSLA(startDate, hoursToAdd, workConfig) {
     return currentDate;
 }
 
+/**
+ * Tworzy asynchroniczne powiadomienie dla użytkownika w systemie.
+ * Powiadomienia są przechowywane jako oddzielne dokumenty w kontenerze 'Tickets'
+ * z typem 'notification', co pozwala na ich łatwe pobieranie per użytkownik.
+ *
+ * @param {string} recipientEmail - Adres e-mail odbiorcy.
+ * @param {string} message - Treść powiadomienia.
+ * @param {string} ticketId - ID zgłoszenia, którego dotyczy powiadomienie.
+ */
 async function sendNotification(recipientEmail, message, ticketId) {
     try {
         const normalizedEmail = recipientEmail.toString().toLowerCase().trim();
@@ -73,6 +93,15 @@ async function sendNotification(recipientEmail, message, ticketId) {
     }
 }
 
+/**
+ * Dodaje wpis do historii (audytu) zgłoszenia.
+ * Komentarze systemowe są kluczowe dla śledzenia cyklu życia zgłoszenia 
+ * (zmiany statusów, przypisań) i nie mogą być edytowane przez użytkowników.
+ *
+ * @param {Object} ticket - Obiekt zgłoszenia modyfikowany przez referencję.
+ * @param {string} text - Treść logu systemowego.
+ * @param {Object} clientPrincipal - Dane użytkownika wykonującego akcję.
+ */
 function addSystemComment(ticket, text, clientPrincipal) {
     if (!ticket.comments) ticket.comments = [];
     ticket.comments.push({
@@ -83,10 +112,23 @@ function addSystemComment(ticket, text, clientPrincipal) {
     });
 }
 
-// --- GŁÓWNA FUNKCJA ---
-
+/**
+ * Główna funkcja aktualizująca zgłoszenie.
+ * * Jest to najbardziej złożona funkcja w systemie, obsługująca:
+ * 1. Walidację spójności danych przy użyciu mechanizmu ETag (Optimistic Concurrency Control).
+ * 2. Logikę biznesową zmian stanów (Status, Przypisanie, Kategoria).
+ * 3. Skomplikowane operacje bazodanowe:
+ * - Standardowy UPDATE (replace) dla zmian w obrębie tej samej partycji.
+ * - Transakcję DELETE + CREATE dla zmiany kategorii (zmiana Partition Key).
+ *
+ * @param {Object} context - Kontekst wykonania funkcji Azure.
+ * @param {Object} req - Obiekt żądania HTTP.
+ * @param {string} req.body.ticketId - ID edytowanego zgłoszenia.
+ * @param {Object} req.body.changes - Obiekt zawierający tylko zmienione pola.
+ * @param {string} req.body.etag - Wersja dokumentu posiadana przez klienta (niezbędna do zapisu).
+ * @returns {Object} Odpowiedź HTTP (200 OK z nowym obiektem lub kod błędu).
+ */
 module.exports = async function (context, req) {
-    // 1. Uwierzytelnienie
     const header = req.headers['x-ms-client-principal'];
     if (!header) {
         context.res = { status: 401, body: { message: "Brak uwierzytelnienia." } };
@@ -104,19 +146,19 @@ module.exports = async function (context, req) {
 
     const { ticketId, changes, etag } = req.body;
     
-    // 2. Walidacja danych
     if (!ticketId || !changes) {
         context.res = { status: 400, body: { message: "Brak wymaganych danych." } };
         return;
     }
 
+    // Wymuszenie obecności ETag chroni przed przypadkowym nadpisaniem danych
+    // przez klienta, który nie obsługuje mechanizmu współbieżności.
     if (!etag) {
         context.res = { status: 428, body: { message: "Błąd spójności: Brak nagłówka ETag. Odśwież stronę." } };
         return;
     }
 
     try {
-        // 3. Pobranie zgłoszenia
         const querySpec = {
             query: "SELECT * FROM c WHERE c.id = @ticketId",
             parameters: [{ name: "@ticketId", value: ticketId }]
@@ -130,25 +172,28 @@ module.exports = async function (context, req) {
         
         let ticket = items[0];
 
-        // --- 4. MANUALNA WERYFIKACJA ETAG (POPRAWIONA) ---
-        // Używamy context.res zamiast return { ... }
+        // MANUALNA WERYFIKACJA ETAG (Hard Check)
+        // Mimo że Cosmos DB obsługuje 'ifMatch' w metodzie replace,
+        // wykonujemy ręczne sprawdzenie tutaj, aby natychmiast przerwać przetwarzanie
+        // i zwrócić precyzyjny komunikat błędu, zanim wykonamy jakąkolwiek logikę biznesową.
+        // Zapobiega to sytuacji "Lost Update" (nadpisania zmian innego agenta).
         if (ticket._etag !== etag) {
             context.log(`[CONFLICT] DB Etag: ${ticket._etag} vs Req Etag: ${etag}`);
             context.res = { 
                 status: 412, 
                 body: { message: "Konflikt edycji: Ktoś inny zmodyfikował to zgłoszenie w międzyczasie." } 
             };
-            return; // WAŻNE: Kończymy działanie funkcji
+            return; 
         }
-        // ------------------------------------------------
 
         const originalCategory = ticket.category;
         const reportingUserEmail = ticket.reportingUser.email;
         const isSelfUpdate = reportingUserEmail.toLowerCase() === clientPrincipal.userDetails.toLowerCase();
 
-        // --- Logika Biznesowa ---
+        // --- APLIKOWANIE LOGIKI BIZNESOWEJ ---
 
         if (ticket.status === 'Zamknięte') {
+            // Zgłoszenia zamknięte są "zamrożone" - jedyna dozwolona akcja to ponowne otwarcie.
             const isReopening = changes.status && changes.status === 'Otwarte';
             if (isReopening) {
                  addSystemComment(ticket, `Zmieniono status z "Zamknięte" na "Otwarte".`, clientPrincipal);
@@ -160,14 +205,17 @@ module.exports = async function (context, req) {
                 return;
             }
         } else {
-            // Zmiany statusów
+            // Obsługa zmian statusu
             if (changes.status && ticket.status !== changes.status) {
                 if (['Rozwiązane', 'Odrzucone'].includes(changes.status)) {
                     addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "Zamknięte".`, clientPrincipal);
                     ticket.status = 'Zamknięte'; 
                     ticket.dates.closedAt = new Date().toISOString();
+                    
+                    // Automatyczne przypisanie zamykającego, jeśli zgłoszenie wisiało na nikim
                     if (!ticket.assignedTo.person) ticket.assignedTo.person = clientPrincipal.userDetails;
 
+                    // Automatyczna korekta grupy przypisania (jeśli zamykający jest z innej grupy)
                     try {
                         const { resources: sData } = await ticketsContainer.items.query("SELECT * FROM c WHERE c.id = 'global_settings'").fetchAll();
                         if (sData.length > 0 && sData[0].groups) {
@@ -190,17 +238,19 @@ module.exports = async function (context, req) {
                 }
             }
 
-            // Zmiany przypisania
+            // Obsługa zmian przypisania (Agent)
             if (changes.assignedTo && changes.assignedTo.person && ticket.assignedTo.person !== changes.assignedTo.person) {
                 addSystemComment(ticket, `Przypisano do: ${changes.assignedTo.person}.`, clientPrincipal);
                 ticket.assignedTo.person = changes.assignedTo.person;
+                // Jeśli zgłoszenie było nowe, automatycznie zmieniamy status na "w toku" (Otwarte)
                 if (ticket.status === 'Nieprzeczytane') {
                     ticket.status = 'Otwarte';
                     if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Zgłoszenie #${ticketId} przyjęte do realizacji.`, ticketId);
                 }
             }
 
-            // Zmiana kategorii
+            // Obsługa zmiany kategorii
+            // Zmiana kategorii jest krytyczna, ponieważ wpływa na Partition Key (category) oraz SLA.
             if (changes.category && ticket.category !== changes.category) {
                 const { resources: sData } = await ticketsContainer.items.query("SELECT * FROM c WHERE c.id = 'global_settings'").fetchAll();
                 const globalSettings = sData.length > 0 ? sData[0] : null;
@@ -221,12 +271,15 @@ module.exports = async function (context, req) {
                 addSystemComment(ticket, `Zmieniono kategorię z "${ticket.category}" na "${changes.category}".`, clientPrincipal);
                 ticket.category = changes.category;
                 
+                // Zmiana grupy przypisania, jeśli nowa kategoria tego wymaga
                 if (newGroup !== ticket.assignedTo.group) {
                     addSystemComment(ticket, `Zmieniono grupę na: ${newGroup}.`, clientPrincipal);
                     ticket.assignedTo.group = newGroup;
+                    // Resetujemy przypisanie do osoby, bo może nie należeć do nowej grupy
                     if(ticket.assignedTo.person) ticket.assignedTo.person = null;
                 }
 
+                // Przeliczenie SLA wg nowej konfiguracji
                 const newSlaDate = calculateAdvancedSLA(ticket.dates.createdAt, newSlaHours, workConfig);
                 ticket.dates.guaranteedResolutionAt = newSlaDate.toISOString();
                 addSystemComment(ticket, `Zaktualizowano termin SLA (${newSlaHours}h).`, clientPrincipal);
@@ -234,7 +287,7 @@ module.exports = async function (context, req) {
                 if (ticket.status === 'Nieprzeczytane') ticket.status = 'Otwarte';
             }
 
-            // Nowy komentarz
+            // Dodawanie nowego komentarza użytkownika
             if (changes.newComment) {
                  if (!ticket.comments) ticket.comments = [];
                  ticket.comments.push({
@@ -247,16 +300,25 @@ module.exports = async function (context, req) {
             }
         }
         
-        // --- 5. CZYSZCZENIE I ZAPIS ---
+        // --- PRZYGOTOWANIE DO ZAPISU ---
+        // Usuwamy pola systemowe generowane przez Cosmos DB (_rid, _self, etc.),
+        // ponieważ przy funkcji replace/create nie mogą one być częścią payloadu.
         delete ticket._rid;
         delete ticket._self;
         delete ticket._etag; 
         delete ticket._attachments;
         delete ticket._ts;
 
+        // --- WYKONANIE ZAPISU ---
+        
+        // SCENARIUSZ 1: Zmiana kategorii (MIGRACJA PARTYCJI)
+        // W Cosmos DB nie można zaktualizować Partition Key dokumentu.
+        // Musimy usunąć stary dokument i utworzyć nowy w innej partycji logicznej.
         if (changes.category && changes.category !== originalCategory) {
             try {
+                // Usuwamy ze starej partycji (używając ETag dla bezpieczeństwa)
                 await ticketsContainer.item(ticketId, originalCategory).delete({ ifMatch: etag });
+                // Tworzymy w nowej partycji
                 const { resource: createdItem } = await ticketsContainer.items.create(ticket);
                 context.res = { body: createdItem };
             } catch (err) {
@@ -264,7 +326,9 @@ module.exports = async function (context, req) {
                     context.res = { status: 412, body: { message: "Konflikt edycji (zmiana kategorii)." } };
                 } else throw err;
             }
-        } else {
+        } 
+        // SCENARIUSZ 2: Standardowa aktualizacja (W TEJ SAMEJ PARTYCJI)
+        else {
             try {
                 const { resource: updatedItem } = await ticketsContainer
                     .item(ticketId, ticket.category)

@@ -1,29 +1,58 @@
 name: Azure Static Web Apps CI/CD
 
+# DOKUMENTACJA WORKFLOW:
+#
+# Cel:
+#   Automatyzacja procesu wdrażania aplikacji frontendowej oraz towarzyszącego jej
+#   API (Azure Functions) do usługi Azure Static Web Apps po zatwierdzeniu zmian w kodzie.
+#
+# Ważne uwagi:
+#   - Workflow wymaga skonfigurowanego tokenu wdrożeniowego w sekretach repozytorium.
+#   - Zakłada strukturę typu monorepo, gdzie kod frontendu i backendu znajduje się
+#     w jednym repozytorium.
+
 on:
   push:
     branches:
       - main
-
+    # Ograniczenie wyzwalacza do gałęzi 'main' zapobiega przypadkowym wdrożeniom
+    # wersji deweloperskich lub testowych bezpośrednio na środowisko produkcyjne.
 
 jobs:
   build_and_deploy_job:
     runs-on: ubuntu-latest
     name: Build and Deploy Job
     steps:
+      # KROK 1: Pobranie kodu źródłowego
       - uses: actions/checkout@v3
         with:
+          # Włączenie submodules jest kluczowe, jeśli projekt korzysta z zewnętrznych
+          # zależności w formie podmodułów Gita. Zapobiega błędom brakujących plików.
           submodules: true
+
+      # KROK 2: Budowanie i Wdrożenie na Azure
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
         with:
+          # Token API jest pobierany z bezpiecznych sekretów GitHub, co umożliwia
+          # autoryzację wdrożenia do konkretnej instancji SWA bez ujawniania danych w kodzie.
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_YELLOW_SAND_0F97B7D1E }}
+
+          # Token repozytorium jest wymagany przez akcję do komunikacji zwrotnej z GitHubem
+          # (np. raportowanie statusu wdrożenia).
           repo_token: ${{ secrets.GITHUB_TOKEN }}
+
           action: "upload"
 
-          app_location: "/" # Lokalizacja apki
-          api_location: "api" # Lokalizacja api
-          output_location: "" 
+          # Konfiguracja ścieżek (Struktura Monorepo):
+          # "/" - Wskazuje, że pliki źródłowe frontendu (np. package.json) są w roocie repozytorium.
+          app_location: "/"
 
+          # "api" - Wskazuje katalog zawierający kod Azure Functions.
+          # Jeśli ten katalog nie istnieje, krok budowania backendu zostanie pominięty.
+          api_location: "api"
 
+          # "" (Puste) - Pozwala systemowi budowania (Oryx) automatycznie wykryć folder
+          # z gotowym buildem (np. 'dist' lub 'build') na podstawie użytego frameworka.
+          output_location: ""
