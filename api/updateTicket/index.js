@@ -5,7 +5,62 @@ const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
 const database = client.database("ServiceDeskDB");
 const ticketsContainer = database.container("Tickets");
 
-// Funkcja zapisuje powiadomienie
+// =================================================================================
+// 1. DODANO: Funkcja obliczająca SLA (skopiowana z createTicket dla spójności)
+// =================================================================================
+function calculateAdvancedSLA(startDate, hoursToAdd, workConfig) {
+    const startHour = workConfig?.startHour || 8;
+    const endHour = workConfig?.endHour || 16;
+    const holidays = workConfig?.holidays || [];
+
+    let minutesRemaining = hoursToAdd * 60;
+    // Ważne: Tworzymy nowy obiekt daty na podstawie daty startowej
+    let currentDate = new Date(startDate); 
+
+    while (minutesRemaining > 0) {
+        const dayOfWeek = currentDate.getDay(); 
+        const dateString = currentDate.toISOString().split('T')[0];
+        const isHoliday = holidays.includes(dateString);
+        const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+
+        if (isWeekend || isHoliday) {
+            currentDate.setDate(currentDate.getDate() + 1);
+            currentDate.setHours(startHour, 0, 0, 0);
+            continue;
+        }
+
+        const currentHour = currentDate.getHours();
+
+        if (currentHour < startHour) {
+            currentDate.setHours(startHour, 0, 0, 0);
+            continue;
+        }
+
+        if (currentHour >= endHour) {
+            currentDate.setDate(currentDate.getDate() + 1);
+            currentDate.setHours(startHour, 0, 0, 0);
+            continue;
+        }
+
+        const endOfWorkDay = new Date(currentDate);
+        endOfWorkDay.setHours(endHour, 0, 0, 0);
+
+        const msUntilEndOfDay = endOfWorkDay - currentDate;
+        const minutesUntilEndOfDay = Math.floor(msUntilEndOfDay / 60000);
+
+        if (minutesUntilEndOfDay >= minutesRemaining) {
+            currentDate.setMinutes(currentDate.getMinutes() + minutesRemaining);
+            minutesRemaining = 0;
+        } else {
+            minutesRemaining -= minutesUntilEndOfDay;
+            currentDate.setDate(currentDate.getDate() + 1);
+            currentDate.setHours(startHour, 0, 0, 0);
+        }
+    }
+    return currentDate;
+}
+// =================================================================================
+
 async function sendNotification(recipientEmail, message, ticketId) {
     try {
         const normalizedEmail = recipientEmail.toString().toLowerCase().trim();
@@ -68,49 +123,38 @@ module.exports = async function (context, req) {
         const reportingUserEmail = ticket.reportingUser.email;
         const isSelfUpdate = reportingUserEmail.toLowerCase() === clientPrincipal.userDetails.toLowerCase();
 
-        // 1. Logika ZAMKNIĘCIA (Ticket był już zamknięty i ktoś próbuje go edytować)
         if (ticket.status === 'Zamknięte') {
             const isReopening = changes.status && changes.status === 'Otwarte';
             if (isReopening) {
                  addSystemComment(ticket, `Zmieniono status z "Zamknięte" na "Otwarte".`, clientPrincipal);
                  ticket.status = 'Otwarte';
                  ticket.dates.closedAt = null;
-                 
                  if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Zgłoszenie #${ticketId} otwarte ponownie.`, ticketId);
             } else {
                 return { status: 403, body: { message: "Error: Ticket is closed." } };
             }
         } else {
-            // 2. ZMIANA STATUSU (Ticket jest otwarty)
+            // ZMIANA STATUSU
             if (changes.status && ticket.status !== changes.status) {
-                
-                // --- SCENARIUSZ: ZAMYKANIE ZGŁOSZENIA ---
                 if (['Rozwiązane', 'Odrzucone'].includes(changes.status)) {
                     addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "Zamknięte".`, clientPrincipal);
                     ticket.status = 'Zamknięte'; 
                     ticket.dates.closedAt = new Date().toISOString();
                     
-                    // Przypisz osobę zamykającą, jeśli nikt nie był przypisany
                     if (!ticket.assignedTo.person) {
                         ticket.assignedTo.person = clientPrincipal.userDetails;
                     }
 
-                    // --- NOWOŚĆ: Automatyczna zmiana Grupy na grupę osoby zamykającej ---
                     try {
-                        // Pobieramy ustawienia globalne, żeby sprawdzić członków grup
                         const settingsQuery = { query: "SELECT * FROM c WHERE c.id = 'global_settings'" };
                         const { resources: settingsItems } = await ticketsContainer.items.query(settingsQuery).fetchAll();
                         const globalSettings = settingsItems.length > 0 ? settingsItems[0] : null;
 
                         if (globalSettings && globalSettings.groups) {
                             const closingUserEmail = clientPrincipal.userDetails.toLowerCase();
-                            
-                            // Szukamy grupy, która zawiera maila osoby zamykającej
                             const userGroup = globalSettings.groups.find(g => 
                                 g.members && g.members.includes(closingUserEmail)
                             );
-
-                            // Jeśli znaleziono grupę i jest inna niż obecna -> podmieniamy
                             if (userGroup && ticket.assignedTo.group !== userGroup.name) {
                                 addSystemComment(ticket, `Automatycznie zmieniono grupę na "${userGroup.name}" (zgodnie z zespołem osoby zamykającej).`, clientPrincipal);
                                 ticket.assignedTo.group = userGroup.name;
@@ -118,26 +162,21 @@ module.exports = async function (context, req) {
                         }
                     } catch (grpErr) {
                         context.log.error("Błąd przy automatycznej zmianie grupy:", grpErr);
-                        // Nie przerywamy działania, to tylko funkcja pomocnicza
                     }
-                    // -------------------------------------------------------------------
 
                     if (changes.closingComment) {
                          addSystemComment(ticket, `Dodano komentarz zamknięcia: ${changes.closingComment}`, clientPrincipal);
                     }
-                    
                     if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Zgłoszenie #${ticketId} zostało zamknięte (${changes.status}).`, ticketId);
 
                 } else { 
-                    // --- SCENARIUSZ: INNA ZMIANA STATUSU (np. W toku) ---
                     addSystemComment(ticket, `Zmieniono status z "${ticket.status}" na "${changes.status}".`, clientPrincipal);
                     ticket.status = changes.status;
-                    
                     if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Zgłoszenie #${ticketId}: nowy status "${changes.status}".`, ticketId);
                 }
             }
 
-            // 3. PRZYPISANIE
+            // PRZYPISANIE
             if (changes.assignedTo && changes.assignedTo.person && ticket.assignedTo.person !== changes.assignedTo.person) {
                 addSystemComment(ticket, `Przypisano zgłoszenie do: ${changes.assignedTo.person}.`, clientPrincipal);
                 ticket.assignedTo.person = changes.assignedTo.person;
@@ -145,59 +184,73 @@ module.exports = async function (context, req) {
                 if (ticket.status === 'Nieprzeczytane') {
                     addSystemComment(ticket, `Automatycznie zmieniono status z "Nieprzeczytane" na "Otwarte".`, clientPrincipal);
                     ticket.status = 'Otwarte';
-                    
                     if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Zgłoszenie #${ticketId} przyjęte do realizacji.`, ticketId);
                 }
             }
 
-            // 4. ZMIANA KATEGORII
+            // =================================================================================
+            // 4. ZMIANA KATEGORII (POPRAWIONA LOGIKA)
+            // =================================================================================
             if (changes.category && ticket.category !== changes.category) {
-                // Pobieramy ustawienia, żeby znaleźć domyślną grupę dla nowej kategorii
+                // Pobieramy ustawienia
                 const settingsQuery = { query: "SELECT * FROM c WHERE c.id = 'global_settings'" };
                 const { resources: settingsItems } = await ticketsContainer.items.query(settingsQuery).fetchAll();
                 const globalSettings = settingsItems.length > 0 ? settingsItems[0] : null;
 
                 let newGroup = "Pierwsza linia wsparcia";
+                let newSlaHours = 8; // Domyślna wartość, jeśli nie znaleziono konfiguracji
+                let workConfig = { startHour: 8, endHour: 16, holidays: [] };
+
                 if (globalSettings) {
                     const catConfig = globalSettings.categories.find(c => c.name === changes.category);
-                    if (catConfig) newGroup = catConfig.assignedGroup;
+                    if (catConfig) {
+                        newGroup = catConfig.assignedGroup;
+                        newSlaHours = catConfig.sla; // Pobieramy nowe SLA
+                    }
+                    if (globalSettings.workConfig) {
+                        workConfig = globalSettings.workConfig;
+                    }
                 }
 
                 addSystemComment(ticket, `Zmieniono kategorię z "${ticket.category}" na "${changes.category}".`, clientPrincipal);
                 ticket.category = changes.category;
                 
-                // Jeśli zmiana kategorii wymusza zmianę grupy
+                // A. Zmiana Grupy
                 if (newGroup !== ticket.assignedTo.group) {
                     addSystemComment(ticket, `Zmieniono grupę odpowiedzialną na: ${newGroup}.`, clientPrincipal);
                     ticket.assignedTo.group = newGroup;
-                    // Resetujemy osobę przypisaną, bo trafiło do nowej grupy
                     if(ticket.assignedTo.person) ticket.assignedTo.person = null;
                 }
 
+                // B. NOWOŚĆ: Przeliczenie SLA
+                // Używamy daty UTWORZENIA (ticket.dates.createdAt) jako bazy, aby SLA było uczciwe.
+                // Jeśli wolisz liczyć czas "od teraz", zmień ticket.dates.createdAt na new Date().
+                const newSlaDate = calculateAdvancedSLA(ticket.dates.createdAt, newSlaHours, workConfig);
+                ticket.dates.guaranteedResolutionAt = newSlaDate.toISOString();
+                
+                addSystemComment(ticket, `Zaktualizowano termin SLA (wg nowej kategorii: ${newSlaHours}h).`, clientPrincipal);
+
+                // C. Zmiana statusu jeśli był Nieprzeczytane
                 if (ticket.status === 'Nieprzeczytane') { 
                     addSystemComment(ticket, `Automatycznie zmieniono status z "Nieprzeczytane" na "Otwarte".`, clientPrincipal);
                     ticket.status = 'Otwarte';
-                    
                     if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Zgłoszenie #${ticketId} zakwalifikowane.`, ticketId);
                 }
             }
 
-            // 5. KOMENTARZ
+            // KOMENTARZ
             if (changes.newComment) {
                  if (!ticket.comments) ticket.comments = [];
-                 
                  ticket.comments.push({
                     author: clientPrincipal.userDetails,
                     text: `Dodano komentarz: ${changes.newComment.text}`, 
                     timestamp: new Date().toISOString(),
                     attachment: changes.newComment.attachment || null
                 });
-                
                 if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Nowy komentarz w zgłoszeniu #${ticketId}.`, ticketId);
             }
         }
         
-        // Zapis do bazy (upsert lub delete+create przy zmianie partycji)
         if (ticket.category !== originalCategory) {
             const { resource: createdItem } = await ticketsContainer.items.create(ticket);
             await ticketsContainer.item(ticketId, originalCategory).delete();
