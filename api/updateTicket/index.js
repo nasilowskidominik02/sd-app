@@ -4,21 +4,11 @@ const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
 const container = client.database("ServiceDeskDB").container("Tickets");
 
 module.exports = async function (context, req) {
-    // Funkcja pomocnicza do wysyłania odpowiedzi (żeby uniknąć pustych body)
-    const sendResponse = (status, body) => {
-        context.res = {
-            status: status,
-            headers: { "Content-Type": "application/json" },
-            body: body
-        };
-        context.done(); // Jawnie kończymy funkcję
-    };
-
     try {
         // --- 1. AUTORYZACJA ---
         const header = req.headers['x-ms-client-principal'];
         if (!header) {
-            sendResponse(401, { message: "Brak autoryzacji (Missing Header)" });
+            context.res = { status: 401, body: { message: "Brak autoryzacji" } };
             return;
         }
         
@@ -32,28 +22,27 @@ module.exports = async function (context, req) {
         // --- 2. WALIDACJA ---
         const { ticketId, changes } = req.body;
         if (!ticketId || !changes) {
-            sendResponse(400, { message: "Brak ID zgłoszenia lub zmian." });
+            context.res = { status: 400, body: { message: "Brak ID zgłoszenia lub zmian." } };
             return;
         }
 
         // --- 3. POBRANIE ZGŁOSZENIA ---
-        // Używamy bezpieczniejszego zapytania zamiast point-read, jeśli nie jesteśmy pewni PartitionKey
-        // Zakładamy jednak, że ticketId to też PartitionKey. Jeśli nie - to może być źródło problemu.
-        // Dla pewności spróbujmy pobrać item.
+        // Najpierw próbujemy pobrać zgłoszenie, żeby sprawdzić czy istnieje
         let ticket = null;
         try {
+            // Zakładamy, że PartitionKey to ticketId (najczęstsza konfiguracja). 
+            // Jeśli Twoja baza ma inny PartitionKey (np. /category), tu może być potrzebne query.
             const response = await container.item(ticketId, ticketId).read();
             ticket = response.resource;
         } catch (e) {
-            // Ignorujemy błąd, obsłużymy brak ticketa niżej
+            // Ignorujemy błąd 404 z bazy, obsłużymy go if-em niżej
         }
 
         if (!ticket) {
-            sendResponse(404, { message: "Nie znaleziono zgłoszenia (ID nie istnieje)." });
+            context.res = { status: 404, body: { message: "Nie znaleziono zgłoszenia." } };
             return;
         }
 
-        // Kopia do edycji
         let updatedTicket = { ...ticket };
         let notificationsToSend = []; 
 
@@ -92,6 +81,7 @@ module.exports = async function (context, req) {
             updatedTicket.category = changes.category;
             
             try {
+                // Pobieramy ustawienia
                 const { resources: settings } = await container.items.query(
                     "SELECT * FROM c WHERE c.id = 'global_settings'",
                     { enableCrossPartitionQuery: true }
@@ -99,6 +89,7 @@ module.exports = async function (context, req) {
 
                 if (settings && settings.length > 0) {
                     const config = settings[0];
+                    // Bezpieczne sprawdzanie czy categories istnieje
                     const catConfig = config.categories ? config.categories.find(c => c.name === changes.category) : null;
                     
                     if (catConfig) {
@@ -107,6 +98,7 @@ module.exports = async function (context, req) {
                         
                         if (prioConfig) {
                             const hours = parseInt(prioConfig.resolutionTime);
+                            // Liczymy SLA od daty UTWORZENIA
                             const createdAt = new Date(ticket.dates.createdAt);
                             const newSla = new Date(createdAt.getTime() + (hours * 60 * 60 * 1000));
                             
@@ -122,13 +114,13 @@ module.exports = async function (context, req) {
                     }
                 }
             } catch (e) {
-                context.log.error("Błąd przeliczania SLA:", e);
-                // Nie przerywamy działania, po prostu SLA się nie zaktualizuje
+                context.log.error("Błąd przeliczania SLA (niekrytyczny):", e.message);
             }
         }
 
         // C. Przypisanie
         if (changes.assignedTo) {
+            // Zachowujemy stare dane i nadpisujemy nowymi
             updatedTicket.assignedTo = { ...ticket.assignedTo, ...changes.assignedTo };
             
             if (changes.assignedTo.person && changes.assignedTo.person !== userEmail) {
@@ -178,18 +170,14 @@ module.exports = async function (context, req) {
         // --- 6. ZAPIS DO BAZY ---
         const { resource: savedTicket } = await container.item(ticketId, ticketId).replace(updatedTicket);
 
-        // Wysyłanie powiadomień (w bloku try-catch, żeby błąd powiadomienia nie wywalił całej funkcji)
+        // --- 7. POWIADOMIENIA ---
         if (notificationsToSend.length > 0) {
             for (const notif of notificationsToSend) {
                 try {
                     const notifDoc = {
                         id: Math.random().toString(36).substring(2, 15),
-                        // WAŻNE: Dodajemy ticketId jako pseudo-klucz partycji lub inne pole,
-                        // jeśli Twoja baza wymaga konkretnego PartitionKey dla wszystkich dokumentów.
-                        // Jeśli PK to /id, to jest ok. Jeśli PK to /category, powiadomienie musi je mieć!
-                        // Dla bezpieczeństwa dodajemy kategorię ze zgłoszenia do powiadomienia (jeśli PK to kategoria)
+                        // Dodajemy kategorię, bo jeśli baza jest partycjonowana po kategorii, to jest wymagane
                         category: updatedTicket.category || "General", 
-                        
                         type: "notification",
                         recipient: notif.recipient,
                         message: notif.message,
@@ -199,19 +187,28 @@ module.exports = async function (context, req) {
                     };
                     await container.items.create(notifDoc);
                 } catch (err) {
-                    context.log.error("Błąd tworzenia powiadomienia (niekrytyczny):", err.message);
+                    context.log.error("Błąd zapisu powiadomienia:", err.message);
                 }
             }
         }
 
-        // --- 7. FINISH ---
-        sendResponse(200, savedTicket);
+        // --- 8. SUKCES ---
+        context.res = {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+            body: savedTicket
+        };
 
     } catch (error) {
         context.log.error("CRITICAL UPDATE ERROR:", error);
-        sendResponse(500, { 
-            message: "Internal Server Error", 
-            details: error.message 
-        });
+        context.res = {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+            body: { 
+                message: "Internal Server Error", 
+                details: error.message 
+            }
+        };
     }
+    // WAŻNE: W funkcji async NIE wywołujemy context.done()!
 };
