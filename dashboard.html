@@ -602,21 +602,15 @@
         }
 
        async function saveChanges() {
-            // Pozwalamy na zapis jeśli są pendingChanges LUB jeśli wymuszamy zapis (np. komentarz)
             if (Object.keys(pendingChanges).length === 0) return;
             
             const statusEl = document.getElementById('modal-status');
             statusEl.textContent = 'Zapisywanie...';
-            statusEl.className = 'modal-status';
-            statusEl.classList.remove('hidden');
+            statusEl.className = 'modal-status'; // Reset
 
             try {
-                // DEBUG: Sprawdź w konsoli F12 czy etag jest widoczny
+                // DEBUG: Sprawdzamy czy mamy etag
                 console.log("Wysyłam ETAG:", currentTicketData._etag); 
-
-                if (!currentTicketData._etag) {
-                    console.warn("UWAGA: Brak pola _etag w danych zgłoszenia! Blokada nie zadziała.");
-                }
 
                 const response = await fetch('/api/updateTicket', {
                     method: 'POST',
@@ -624,40 +618,38 @@
                     body: JSON.stringify({
                         ticketId: currentTicketData.id,
                         changes: pendingChanges,
-                        etag: currentTicketData._etag // To musi tu być!
+                        etag: currentTicketData._etag // NOWOŚĆ: To jest kluczowe!
                     })
                 });
 
-                // --- OBSŁUGA KONFLIKTU EDYCJI (Błąd 412) ---
+                // --- OBSŁUGA BŁĘDU 412 (KONFLIKT) ---
                 if (response.status === 412) {
-                    statusEl.textContent = '⛔ BŁĄD: Ktoś odpisał w międzyczasie! Odświeżam...';
-                    statusEl.className = 'modal-status error'; // Czerwony kolor
+                    statusEl.textContent = '⛔ BŁĄD: Ktoś zmodyfikował to zgłoszenie w międzyczasie! Odświeżam...';
+                    statusEl.classList.add('error');
                     
-                    // Blokada UI na 3 sekundy
+                    // Czekamy 3 sekundy i przeładowujemy
                     setTimeout(() => {
                         openTicketModal(currentTicketData.id); 
                     }, 3000);
-                    return; // Koniec funkcji
+                    return; 
                 }
-                // --------------------------------------------
+                // -------------------------------------
 
                 if (!response.ok) {
                     const errorData = await response.json();
-                    throw new Error(errorData.message || `Błąd HTTP: ${response.status}`);
+                    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
                 }
                 
                 const updatedTicket = await response.json();
                 statusEl.textContent = 'Zapisano pomyślnie!';
-                statusEl.className = 'modal-status success';
+                statusEl.classList.add('success');
                 
-                // Aktualizujemy dane lokalne (ważne: pobieramy nowy ETAG z odpowiedzi!)
+                // Aktualizujemy dane lokalne i ETAG
                 currentTicketData = updatedTicket;
                 pendingChanges = {}; 
-                
-                // Odświeżamy widok (żeby pokazać nowy komentarz)
                 populateModal(currentTicketData); 
-                
-                // Jeśli jesteśmy na zakładce historii, scrollujemy w dół
+
+                // Scroll w dół jeśli jesteśmy w historii
                 if(document.getElementById('tab-history').classList.contains('active')) {
                      const list = document.getElementById('comments-list');
                      if(list) list.scrollTop = list.scrollHeight;
@@ -669,7 +661,7 @@
 
             } catch (error) {
                  statusEl.textContent = 'Błąd: ' + error.message;
-                 statusEl.className = 'modal-status error';
+                 statusEl.classList.add('error');
             }
         }
 
@@ -781,30 +773,28 @@
             if (commentForm) {
                 commentForm.onsubmit = async (e) => {
                     e.preventDefault();
-                    const commentInput = modal.querySelector('#comment-input');
+                    const commentInput = document.getElementById('comment-input');
                     const text = commentInput.value.trim();
                     
                     if (text) {
-                        // 1. Ustawiamy zmianę w pendingChanges
+                        // 1. Kolejkujemy zmianę
                         pendingChanges.newComment = { text: text };
                         
-                        // 2. Blokujemy przycisk, żeby nie klikać 2 razy
+                        // 2. Blokujemy przycisk (UX)
                         const submitBtn = commentForm.querySelector('button');
                         const originalText = submitBtn.textContent;
                         submitBtn.disabled = true;
                         submitBtn.textContent = "Wysyłanie...";
 
-                        // 3. WYMUSZAMY NATYCHMIASTOWY ZAPIS
+                        // 3. WYMUSZAMY ZAPIS (To wywoła backend i sprawdzi ETAG)
                         try {
-                            await saveChanges(); // To wywoła backend i sprawdzi ETAG
-                            commentInput.value = ''; // Czyścimy pole po sukcesie
+                            await saveChanges(); 
+                            commentInput.value = ''; // Czyścimy po sukcesie
                         } catch (err) {
                             console.error("Błąd wysyłania komentarza:", err);
-                            // Błąd obsłuży funkcja saveChanges (pokaże komunikat na czerwono)
                         } finally {
                             submitBtn.disabled = false;
                             submitBtn.textContent = originalText;
-                            // Czyścimy pendingChanges, żeby nie wysłało się drugi raz przy "Zapisz"
                             delete pendingChanges.newComment;
                         }
                     }

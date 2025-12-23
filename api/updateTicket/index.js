@@ -5,7 +5,7 @@ const client = new CosmosClient(process.env.COSMOS_DB_CONNECTION_STRING);
 const database = client.database("ServiceDeskDB");
 const ticketsContainer = database.container("Tickets");
 
-// Funkcja pomocnicza do obliczania SLA (musimy ją tu mieć, żeby przeliczać daty przy zmianie kategorii)
+// Funkcja pomocnicza do obliczania SLA
 function calculateAdvancedSLA(startDate, hoursToAdd, workConfig) {
     const startHour = workConfig?.startHour || 8;
     const endHour = workConfig?.endHour || 16;
@@ -94,26 +94,19 @@ module.exports = async function (context, req) {
         return { status: 403, body: { message: "Brak uprawnień." } };
     }
 
-    // NOWOŚĆ: Pobieramy etag z requestu
+    // --- NOWOŚĆ: Pobieramy ETAG ---
     const { ticketId, changes, etag } = req.body;
     
     if (!ticketId || !changes) {
         return { status: 400, body: { message: "Brak wymaganych danych." } };
     }
 
-    // Jeśli frontend nie przysłał etaga (np. stara wersja kodu), wymuszamy refresh
-
-    // WALIDACJA ETAGU
-    // Jeśli nie ma etaga, zwracamy 400 lub 428 (Precondition Required)
+    // --- NOWOŚĆ: Walidacja ETAG ---
     if (!etag) {
-        return { 
-            status: 428, // 428 Precondition Required
-            body: { message: "Błąd spójności danych: Brak nagłówka ETag. Odśwież stronę." } 
-        };
+        return { status: 428, body: { message: "Błąd spójności: Brak nagłówka ETag (odśwież stronę)." } };
     }
 
     try {
-        // Pobieramy aktualny stan z bazy (tylko do odczytu i logiki biznesowej)
         const querySpec = {
             query: "SELECT * FROM c WHERE c.id = @ticketId",
             parameters: [{ name: "@ticketId", value: ticketId }]
@@ -126,7 +119,7 @@ module.exports = async function (context, req) {
         const reportingUserEmail = ticket.reportingUser.email;
         const isSelfUpdate = reportingUserEmail.toLowerCase() === clientPrincipal.userDetails.toLowerCase();
 
-        // --- Logika Biznesowa (taka sama jak wcześniej) ---
+        // --- Logika Biznesowa ---
 
         if (ticket.status === 'Zamknięte') {
             const isReopening = changes.status && changes.status === 'Otwarte';
@@ -146,7 +139,6 @@ module.exports = async function (context, req) {
                     ticket.dates.closedAt = new Date().toISOString();
                     if (!ticket.assignedTo.person) ticket.assignedTo.person = clientPrincipal.userDetails;
 
-                    // Auto-przypisanie grupy zamykającego
                     try {
                         const { resources: sData } = await ticketsContainer.items.query("SELECT * FROM c WHERE c.id = 'global_settings'").fetchAll();
                         if (sData.length > 0 && sData[0].groups) {
@@ -204,7 +196,6 @@ module.exports = async function (context, req) {
                     if(ticket.assignedTo.person) ticket.assignedTo.person = null;
                 }
 
-                // Przeliczanie SLA
                 const newSlaDate = calculateAdvancedSLA(ticket.dates.createdAt, newSlaHours, workConfig);
                 ticket.dates.guaranteedResolutionAt = newSlaDate.toISOString();
                 addSystemComment(ticket, `Zaktualizowano termin SLA (${newSlaHours}h).`, clientPrincipal);
@@ -228,40 +219,33 @@ module.exports = async function (context, req) {
         
         // Sytuacja 1: Zmiana kategorii (zmiana Partition Key)
         if (ticket.category !== originalCategory) {
-            // Tutaj musimy: 1. Utworzyć nowy, 2. Usunąć stary (pod warunkiem ETagu!)
-            // Ryzykowne: jeśli usunięcie się nie uda, będziemy mieli duplikat.
-            // Bezpieczniej: Najpierw spróbować usunąć stary z ifMatch.
-            
             try {
-                // Krok A: Usuń stary dokument TYLKO jeśli ETag się zgadza
+                // Usuń stary TYLKO jeśli ETag się zgadza
                 await ticketsContainer.item(ticketId, originalCategory).delete({ ifMatch: etag });
                 
-                // Krok B: Jeśli się udało (brak błędu), tworzymy nowy
+                // Utwórz nowy
                 const { resource: createdItem } = await ticketsContainer.items.create(ticket);
                 context.res = { body: createdItem };
 
             } catch (deleteErr) {
                 if (deleteErr.code === 412) {
-                    // Ktoś zmienił dokument w międzyczasie!
                     context.res = { status: 412, body: { message: "Konflikt edycji: Ktoś inny zmodyfikował to zgłoszenie." } };
                 } else {
                     throw deleteErr;
                 }
             }
-
         } else {
-            // Sytuacja 2: Standardowa aktualizacja (w tej samej partycji)
+            // Sytuacja 2: Standardowa aktualizacja
             try {
-                // Używamy .replace() z opcją ifMatch
+                // Używamy replace + ifMatch zamiast upsert
                 const { resource: updatedItem } = await ticketsContainer
                     .item(ticketId, ticket.category)
-                    .replace(ticket, { ifMatch: etag }); // KLUCZOWE: Sprawdzamy ETag
+                    .replace(ticket, { ifMatch: etag });
 
                 context.res = { body: updatedItem };
 
             } catch (updateErr) {
                 if (updateErr.code === 412) {
-                    // Błąd 412 Precondition Failed - ETagi się nie zgadzają
                     context.res = { status: 412, body: { message: "Konflikt edycji: Ktoś inny zmodyfikował to zgłoszenie." } };
                 } else {
                     throw updateErr;
