@@ -606,17 +606,35 @@
             
             const statusEl = document.getElementById('modal-status');
             statusEl.textContent = 'Zapisywanie...';
-            statusEl.classList.remove('hidden', 'success', 'error');
+            statusEl.className = 'modal-status'; // Reset klas
 
             try {
+                // Pobieramy ETag z aktualnie załadowanego zgłoszenia
+                // Cosmos DB zawsze zwraca pole _etag w obiekcie
+                const currentEtag = currentTicketData._etag;
+
                 const response = await fetch('/api/updateTicket', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         ticketId: currentTicketData.id,
-                        changes: pendingChanges
+                        changes: pendingChanges,
+                        etag: currentEtag // NOWOŚĆ: Wysyłamy wersję dokumentu
                     })
                 });
+
+                // --- OBSŁUGA KONFLIKTU EDYCJI (Błąd 412) ---
+                if (response.status === 412) {
+                    statusEl.textContent = 'Błąd: Ktoś zmodyfikował to zgłoszenie w międzyczasie. Strona zostanie odświeżona...';
+                    statusEl.classList.add('error');
+                    
+                    // Blokujemy UI i odświeżamy dane po 3 sekundach
+                    setTimeout(() => {
+                        openTicketModal(currentTicketData.id); // Przeładuj zgłoszenie (pobierz nowe dane)
+                    }, 3000);
+                    return;
+                }
+                // --------------------------------------------
 
                 if (!response.ok) {
                     const errorData = await response.json();
