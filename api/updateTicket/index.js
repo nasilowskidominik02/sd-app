@@ -86,64 +86,67 @@ function addSystemComment(ticket, text, clientPrincipal) {
 // --- GŁÓWNA FUNKCJA ---
 
 module.exports = async function (context, req) {
+    // 1. Uwierzytelnienie
     const header = req.headers['x-ms-client-principal'];
-    if (!header) return { status: 401, body: { message: "Brak uwierzytelnienia." } };
+    if (!header) {
+        context.res = { status: 401, body: { message: "Brak uwierzytelnienia." } };
+        return;
+    }
     
     const encoded = Buffer.from(header, 'base64');
     const decoded = encoded.toString('ascii');
     const clientPrincipal = JSON.parse(decoded);
 
     if (!clientPrincipal.userRoles.includes('sd')) {
-        return { status: 403, body: { message: "Brak uprawnień." } };
+        context.res = { status: 403, body: { message: "Brak uprawnień." } };
+        return;
     }
 
     const { ticketId, changes, etag } = req.body;
     
-    // 1. Walidacja danych wejściowych
+    // 2. Walidacja danych
     if (!ticketId || !changes) {
-        return { status: 400, body: { message: "Brak wymaganych danych." } };
+        context.res = { status: 400, body: { message: "Brak wymaganych danych." } };
+        return;
     }
 
-    // 2. Walidacja obecności ETAG w żądaniu
     if (!etag) {
-        return { 
-            status: 428, // 428 Precondition Required
-            body: { message: "Błąd spójności: Brak nagłówka ETag. Odśwież stronę." } 
-        };
+        context.res = { status: 428, body: { message: "Błąd spójności: Brak nagłówka ETag. Odśwież stronę." } };
+        return;
     }
 
     try {
-        // 3. Pobranie aktualnego stanu zgłoszenia z bazy
+        // 3. Pobranie zgłoszenia
         const querySpec = {
             query: "SELECT * FROM c WHERE c.id = @ticketId",
             parameters: [{ name: "@ticketId", value: ticketId }]
         };
         const { resources: items } = await ticketsContainer.items.query(querySpec).fetchAll();
         
-        if (items.length === 0) return { status: 404, body: { message: "Nie znaleziono zgłoszenia." } };
+        if (items.length === 0) {
+            context.res = { status: 404, body: { message: "Nie znaleziono zgłoszenia." } };
+            return;
+        }
         
         let ticket = items[0];
 
-        // ====================================================================
-        // 4. MANUALNA WERYFIKACJA ETAG (HARD CHECK)
-        // To jest kluczowy moment. Porównujemy ETag z bazy (ticket._etag)
-        // z ETagiem, który przyszedł od Ciebie (req.body.etag).
-        // Jeśli są różne = ktoś inny edytował plik = BLOKUJEMY.
-        // ====================================================================
+        // --- 4. MANUALNA WERYFIKACJA ETAG (POPRAWIONA) ---
+        // Używamy context.res zamiast return { ... }
         if (ticket._etag !== etag) {
             context.log(`[CONFLICT] DB Etag: ${ticket._etag} vs Req Etag: ${etag}`);
-            return { 
+            context.res = { 
                 status: 412, 
                 body: { message: "Konflikt edycji: Ktoś inny zmodyfikował to zgłoszenie w międzyczasie." } 
             };
+            return; // WAŻNE: Kończymy działanie funkcji
         }
-        // ====================================================================
+        // ------------------------------------------------
 
         const originalCategory = ticket.category;
         const reportingUserEmail = ticket.reportingUser.email;
         const isSelfUpdate = reportingUserEmail.toLowerCase() === clientPrincipal.userDetails.toLowerCase();
 
-        // --- Logika Biznesowa (Aplikowanie zmian do obiektu w pamięci) ---
+        // --- Logika Biznesowa ---
 
         if (ticket.status === 'Zamknięte') {
             const isReopening = changes.status && changes.status === 'Otwarte';
@@ -153,7 +156,8 @@ module.exports = async function (context, req) {
                  ticket.dates.closedAt = null;
                  if (!isSelfUpdate) await sendNotification(reportingUserEmail, `Zgłoszenie #${ticketId} otwarte ponownie.`, ticketId);
             } else {
-                return { status: 403, body: { message: "Błąd: Zgłoszenie jest zamknięte." } };
+                context.res = { status: 403, body: { message: "Błąd: Zgłoszenie jest zamknięte." } };
+                return;
             }
         } else {
             // Zmiany statusów
@@ -164,7 +168,6 @@ module.exports = async function (context, req) {
                     ticket.dates.closedAt = new Date().toISOString();
                     if (!ticket.assignedTo.person) ticket.assignedTo.person = clientPrincipal.userDetails;
 
-                    // Auto-grupa przy zamknięciu
                     try {
                         const { resources: sData } = await ticketsContainer.items.query("SELECT * FROM c WHERE c.id = 'global_settings'").fetchAll();
                         if (sData.length > 0 && sData[0].groups) {
@@ -244,37 +247,28 @@ module.exports = async function (context, req) {
             }
         }
         
-        // --- 5. CZYSZCZENIE OBIEKTU PRZED ZAPISEM ---
-        // Usuwamy pola systemowe, bo zaraz zrobimy replace całego obiektu.
+        // --- 5. CZYSZCZENIE I ZAPIS ---
         delete ticket._rid;
         delete ticket._self;
         delete ticket._etag; 
         delete ticket._attachments;
         delete ticket._ts;
 
-        // --- 6. ZAPIS DO BAZY ---
-        
-        // Sytuacja A: Zmiana kategorii (zmiana Partition Key)
         if (changes.category && changes.category !== originalCategory) {
-            // Ponieważ zweryfikowaliśmy ETag ręcznie w pkt 4, tu możemy być pewniejsi,
-            // ale dla bezpieczeństwa nadal używamy ifMatch przy usuwaniu.
             try {
                 await ticketsContainer.item(ticketId, originalCategory).delete({ ifMatch: etag });
                 const { resource: createdItem } = await ticketsContainer.items.create(ticket);
                 context.res = { body: createdItem };
             } catch (err) {
-                // Jeśli w ułamku sekundy między naszym checkiem a delete coś się zmieniło
                 if (err.code === 412) {
-                    context.res = { status: 412, body: { message: "Konflikt edycji." } };
+                    context.res = { status: 412, body: { message: "Konflikt edycji (zmiana kategorii)." } };
                 } else throw err;
             }
-        } 
-        // Sytuacja B: Standardowa aktualizacja
-        else {
+        } else {
             try {
                 const { resource: updatedItem } = await ticketsContainer
                     .item(ticketId, ticket.category)
-                    .replace(ticket, { ifMatch: etag }); // Dodatkowe zabezpieczenie
+                    .replace(ticket, { ifMatch: etag });
 
                 context.res = { body: updatedItem };
             } catch (err) {
