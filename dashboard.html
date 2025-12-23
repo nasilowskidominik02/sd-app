@@ -608,11 +608,10 @@
             statusEl.textContent = 'Zapisywanie...';
             statusEl.classList.remove('hidden', 'error', 'success');
 
-            // DEBUGOWANIE
-            console.log("AKTUALNY ETAG:", currentTicketData._etag);
+            console.log("Wysyłam ETAG:", currentTicketData._etag);
+            
             if (!currentTicketData._etag) {
-                alert("BŁĄD KRYTYCZNY: Frontend nie ma pola _etag. Sprawdź Krok 1 (api/getTicket).");
-                return;
+                console.error("BRAK ETAG - Blokada nie zadziała poprawnie.");
             }
 
             try {
@@ -622,44 +621,54 @@
                     body: JSON.stringify({
                         ticketId: currentTicketData.id,
                         changes: pendingChanges,
-                        etag: currentTicketData._etag // <--- TO MUSI BYĆ
+                        etag: currentTicketData._etag
                     })
                 });
 
-                // OBSŁUGA KONFLIKTU (412)
+                // 1. Obsługa 412 (Konflikt) - to zadziała, bo status jest w nagłówku HTTP, nie w JSON
                 if (response.status === 412) {
-                    statusEl.textContent = '⛔ BŁĄD: Ktoś odpisał w międzyczasie! Odświeżam...';
+                    statusEl.textContent = '⛔ BŁĄD: Ktoś zmodyfikował to zgłoszenie w międzyczasie! Odświeżam...';
                     statusEl.classList.add('error');
-                    alert("UWAGA: Ktoś inny zmienił to zgłoszenie w trakcie Twojej pracy.\nStrona zostanie odświeżona, a Twoje zmiany NIE zostały zapisane.");
+                    
+                    alert("UWAGA: Ktoś inny właśnie edytował to zgłoszenie. Twoje zmiany nie zostały zapisane. Strona zostanie odświeżona.");
                     
                     setTimeout(() => {
-                        openTicketModal(currentTicketData.id); // Przeładuj
+                        openTicketModal(currentTicketData.id); 
                     }, 1000);
                     return;
                 }
                 
-                // OBSŁUGA BRAKU ETAGA NA BACKENDZIE (428)
+                // 2. Obsługa 428 (Brak ETaga)
                 if (response.status === 428) {
-                    statusEl.textContent = 'Błąd wersji danych. Odświeżam...';
+                    statusEl.textContent = 'Błąd spójności danych. Odświeżam...';
                     statusEl.classList.add('error');
                     openTicketModal(currentTicketData.id);
                     return;
                 }
 
+                // 3. Obsługa innych błędów (np. 500)
                 if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
+                    // Próbujemy odczytać JSON, jeśli się nie uda, czytamy tekst
+                    let errorMessage = `Błąd HTTP: ${response.status}`;
+                    try {
+                        const errorData = await response.json();
+                        if (errorData && errorData.message) errorMessage = errorData.message;
+                    } catch (e) {
+                        // Jeśli nie ma JSONa, trudno - zostajemy przy statusie
+                        console.warn("Backend nie zwrócił JSONa z błędem.");
+                    }
+                    throw new Error(errorMessage);
                 }
                 
+                // 4. Sukces
                 const updatedTicket = await response.json();
-                statusEl.textContent = 'Zapisano!';
+                statusEl.textContent = 'Zapisano pomyślnie!';
                 statusEl.classList.add('success');
                 
-                // WAŻNE: Aktualizujemy lokalny ETAG po udanym zapisie!
                 currentTicketData = updatedTicket;
                 pendingChanges = {}; 
                 populateModal(currentTicketData); 
 
-                // Przewiń komentarze
                 if(document.getElementById('tab-history').classList.contains('active')) {
                      const list = document.getElementById('comments-list');
                      if(list) list.scrollTop = list.scrollHeight;
@@ -668,6 +677,7 @@
                 setTimeout(() => { statusEl.classList.add('hidden'); }, 2000);
 
             } catch (error) {
+                 console.error(error);
                  statusEl.textContent = 'Błąd: ' + error.message;
                  statusEl.classList.add('error');
             }
