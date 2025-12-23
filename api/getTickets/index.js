@@ -124,19 +124,16 @@ module.exports = async function (context, req) {
             whereString = " WHERE " + whereClauses.join(" AND ");
         }
 
-        // --- 5. WYKONANIE ZAPYTAŃ (COUNT + DATA) ---
+       // --- 5. WYKONANIE ZAPYTAŃ (COUNT + DATA) ---
         
-        // A. Zapytanie o licznik (Total Count)
+        // A. Zapytanie o licznik
         const countQuerySpec = {
             query: `SELECT VALUE COUNT(1) FROM c ${whereString}`,
             parameters: parameters
         };
 
         // B. Zapytanie o dane (Paginacja SQL)
-        // POPRAWKA: Wstawiamy offset i limit bezpośrednio do stringa SQL.
-        // Parametryzacja (@offset) w tym miejscu często powoduje błąd "Input values invalid".
-        // Ponieważ offset i pageSize są liczbami obliczanymi przez nas, jest to bezpieczne.
-
+        // Interpolacja zmiennych offset/limit jest poprawna i bezpieczna tutaj.
         const dataQuerySpec = {
             query: `
                 SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates 
@@ -145,13 +142,14 @@ module.exports = async function (context, req) {
                 ORDER BY c.dates.createdAt DESC 
                 OFFSET ${offset} LIMIT ${pageSize}
             `,
-            parameters: parameters // Używamy podstawowych parametrów (bez offset/limit)
+            parameters: parameters
         };
 
-        // Wykonujemy zapytania równolegle
+        // POPRAWKA: Dodano drugi argument { enableCrossPartitionQuery: true }
+        // Bez tego Cosmos DB zwraca błąd "One of the input values is invalid" na kolekcjach partycjonowanych.
         const [countResponse, dataResponse] = await Promise.all([
-            container.items.query(countQuerySpec).fetchAll(),
-            container.items.query(dataQuerySpec).fetchAll()
+            container.items.query(countQuerySpec, { enableCrossPartitionQuery: true }).fetchAll(),
+            container.items.query(dataQuerySpec, { enableCrossPartitionQuery: true }).fetchAll()
         ]);
 
         const totalCount = countResponse.resources[0];
