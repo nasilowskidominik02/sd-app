@@ -20,14 +20,17 @@ module.exports = async function (context, req) {
         const isServiceDesk = clientPrincipal.userRoles.includes('sd');
         const userEmail = clientPrincipal.userDetails;
         
-        // --- 2. PARAMETRY ---
+        // --- 2. PARAMETRY STRONICOWANIA ---
+        // Tutaj ustalamy logikę: strona 1 -> offset 0, strona 2 -> offset 10 itd.
         const page = parseInt(req.query.page) || 1;
+        const pageSize = 10;
+        const offset = (page - 1) * pageSize;
+
+        // Pozostałe parametry
         const rawSearch = req.query.search || '';
         const searchText = rawSearch.toLowerCase().trim();
         const searchField = req.query.field || 'id';
         const quickFilter = req.query.quickFilter || (isServiceDesk ? 'my_group' : 'all');
-        const pageSize = 10;
-        const offset = (page - 1) * pageSize;
 
         // --- 3. PRZYGOTOWANIE LOGIKI FILTRACJI (JS) ---
         let filterByMyGroups = false;
@@ -49,28 +52,22 @@ module.exports = async function (context, req) {
 
         // --- 5. LOGIKA FILTRÓW DLA SD ---
         if (isServiceDesk) {
-            
-            // === OPCJA: MOJA GRUPA ===
             if (quickFilter === 'my_group') {
                 filterByMyGroups = true; // Włączamy filtrowanie grup w JS
                 
-                // A. Dodajemy filtr statusu do SQL (tylko otwarte)
-                // To jest bezpieczne dla bazy i od razu odsieje zamknięte tickety
+                // Pobieramy tylko otwarte, żeby nie mieliła bazy zamkniętymi
                 whereClauses.push("c.status != 'Zamknięte' AND c.status != 'Rozwiązane' AND c.status != 'Odrzucone'");
 
-                // B. Pobieramy grupy z ustawień (do filtrowania w JS)
+                // Pobieramy definicje grup
                 try {
                     const { resources: settings } = await container.items.query(
-                        "SELECT * FROM c WHERE c.id = 'global_settings'",
-                        { enableCrossPartitionQuery: true }
+                        "SELECT * FROM c WHERE c.id = 'global_settings'"
                     ).fetchAll();
                     
                     if (settings && settings.length > 0) {
                         const config = settings[0];
                         if (config.groups && Array.isArray(config.groups)) {
                             const userEmailLower = userEmail.toLowerCase().trim();
-                            
-                            // Zapisujemy nazwy grup (małymi literami)
                             myAllowedGroups = config.groups
                                 .filter(g => g.members && g.members.some(m => m.toLowerCase().trim() === userEmailLower))
                                 .map(g => g.name.toLowerCase().trim());
@@ -80,7 +77,6 @@ module.exports = async function (context, req) {
                     context.log.error("Błąd pobierania grup:", err.message);
                 }
             } 
-            // === INNE FILTRY ===
             else if (quickFilter === 'open') {
                 whereClauses.push("c.status != 'Zamknięte' AND c.status != 'Rozwiązane' AND c.status != 'Odrzucone'");
             }
@@ -116,20 +112,20 @@ module.exports = async function (context, req) {
             whereString = " WHERE " + whereClauses.join(" AND ");
         }
 
-        // --- 7. POBIERANIE DANYCH ---
-        // Pobieramy surowe dane (SQL filtruje statusy i tekst, ale NIE grupy)
+        // --- 7. POBIERANIE DANYCH (WSZYSTKIE PASUJĄCE) ---
+        // Tutaj pobieramy wszystko co pasuje do SQL, a stronnicowanie zrobimy niżej w JS
         const query = `SELECT c.id, c.status, c.title, c.reportingUser, c.category, c.assignedTo, c.dates FROM c ${whereString}`;
 
         const { resources: rawTickets } = await container.items.query(
             { query, parameters },
-            { enableCrossPartitionQuery: true }
+            { enableCrossPartitionQuery: true } // To jest kluczowe, żeby nie było błędów
         ).fetchAll();
 
-        // --- 8. FILTROWANIE GRUP (JS), SORTOWANIE I PAGINACJA ---
+        // --- 8. PRZETWARZANIE W PAMIĘCI (JS) ---
         
         let processedTickets = rawTickets;
 
-        // A. Filtrowanie grup w JS (tylko jeśli wybrano my_group)
+        // A. Filtrowanie grup (jeśli dotyczy)
         if (filterByMyGroups) {
             if (myAllowedGroups.length === 0) {
                 processedTickets = [];
@@ -151,14 +147,18 @@ module.exports = async function (context, req) {
             return dateB - dateA;
         });
 
-        // C. Paginacja
+        // C. STRONICOWANIE (Paginacja)
+        // To jest moment, w którym realizujemy Twoje wymaganie:
+        // "na stronie 1 załaduj 10 pierwszych, na stronie 2 kolejne 10"
         const totalCount = processedTickets.length;
         const totalPages = Math.ceil(totalCount / pageSize);
+        
+        // Wycinamy odpowiedni kawałek tablicy
         const paginatedTickets = processedTickets.slice(offset, offset + pageSize);
 
         context.res = {
             body: {
-                tickets: paginatedTickets,
+                tickets: paginatedTickets, // Zwracamy tylko 10 sztuk
                 totalCount: totalCount,
                 currentPage: page,
                 totalPages: totalPages
