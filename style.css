@@ -425,7 +425,8 @@ a:hover {
     padding: 16px 24px; border-bottom: 1px solid var(--gray-border); flex-shrink: 0;
 }
 .modal-header h2 { font-size: 18px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80%; }
-.btn-close { background: transparent; border: none; font-size: 24px; cursor: pointer; color: var(--text-light); }
+/* .btn-close { background: transparent; border: none; font-size: 24px; cursor: pointer; color: var(--text-light); } */
+.btn-close { background: transparent; border: none; font-size: 24px; cursor: pointer; color: var(--text-dark); }
 .modal-body { display: flex; flex-grow: 1; overflow: hidden; }
 
 /* Panel akcji bocznych w modalu */
